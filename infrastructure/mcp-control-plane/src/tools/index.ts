@@ -31,6 +31,7 @@ import { registerAgentTools } from "./agent.tools.js";
 import { registerOrchestratorTools } from "./orchestrator.tools.js";
 import { registerDevtoolsTools } from "./devtools.tools.js";
 import { registerIntelligenceTools } from "./intelligence.tools.js";
+import { registerGraphifyTools } from "./graphify.tools.js";
 import type { MemorySubAdapter } from "../adapters/memory/index.js";
 
 import { registerUnifiedStatusTool } from "./unified.status.tools.js";
@@ -104,6 +105,8 @@ export async function registerAllTools(
 
   // ── Intelligence & Diagnostics (Graphify Codebase AST & DevTools Audit)
   await registerIntelligenceTools(server);
+  // ── Graphify MCP Proxy (direct pass-through to https://api.graphify.com/mcp)
+  await registerGraphifyTools(server);
   // ── DevTools lab backend (#1673 — CDP-backed performance/console/network)
   await registerDevtoolsTools(server);
 
