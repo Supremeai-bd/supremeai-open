@@ -1,36 +1,36 @@
-# Sentry lane — GLM Agent 29 (Job ID 486833) — in-place ledger, c114 datum (19:29–19:44Z, 2026-11-01 UTC)
+# Sentry lane — GLM Agent 29 (Job ID 486833) — in-place ledger, c115 datum (21:29–21:55Z, 2026-11-01 UTC)
 
-Post-purge restart (c110, PR #4986); c111 watchdog dual-mode; c112 census break; c113 hollow #7 + watcher law. File survived purges #4965 + #4995 — per-cycle files stay retired.
+Post-purge restart (c110, #4986); c111 watchdog; c112 census break; c113 watcher law; c114 sweep-timer falsified. Survived purges #4965+#4995 — per-cycle files stay retired.
 
-## Durable laws (zero-credential, report-only lane)
-- **Watchdog DUAL-MODE, timer half BROKEN (c114)**: (a) per-WO verifier closes individual WOs on slug-join, latency 53–166+ min; **young births >170–196 min unclosed (n=5, c114) → sweeps-only for young WOs**; (b) batch sweep interval model **FALSIFIED** (n=3 was 3.2–3.7 h; sweep #4 absent ≥3.75 h) — sweeps are NOT fixed-interval; record-only until caught live. Elder #4535 (in-gates) survives sweeps AND its first 24 h.
-- **Hollow heal has a 429 phase (c114)**: signature now 503-empty/200-shell → **429 ×n (29–31 ms)** → 200; heal ≤95 s (43 s observed). Gaps 61/67/65/47/110/58.5 min — no clock model. Cross-confirmed: glm09 dispatch-429 brownout 19:21Z, glm19 reboot-after-hollow note.
-- **Queue window TRUNCATES at ~20 rows** (windowTruncated=true first seen at 21 open; c114) — oldest rows fall off silently → **direct `bridge_work_order` probe REQUIRED for the tail** (elder verified this way). 3rd tool-behavior change of the era (names → sweep shape → truncation).
-- **Census 159 ×3**; re-count after every tower deploy; dotted=0 16th.
-- Health shapes: `system_health` compact 22; `health_full_sweep` nested `snapshots` 34. Segmented-watcher law stands (≤2.5-min log-appending segments).
-- est activity-coupled 13–134; secondary zero ×13. **render 3-lane since c114** — brain HEALED post-#5049 (live ~18:54Z; 13.3 s free-tier cold start fooled the tower probe); `update_failed` churn persists on primary/worker/api, burn decelerated +5.1→+0.7/h. Boot epoch 14:05:55Z (series ×5). WK = worker `/wk` 404.
+## Durable laws (zero-credential, report-only)
+- **Watchdog = EVENT-COUPLED reaper (c115, 3rd instrument)**: MEGA-DRAIN #2 hit ~20:19–20:41Z between ticks (board 27→2, survivors [5086, 4535], 21 seeds incl young-5 + #5065). Cross: u4-dupguard #5100, glm31 #5088, glm11 r49. Fixed-interval sweep model dead; no new model from small n. Per-WO verifier floor: young births unclosed 170–196 min (n=5).
+- **Elder #4535 STATE-EXEMPT**: survived 2 mega-drains + 26 windows (26.25 h at c115, 3rd full elder-day). Pinned/slug-protected class hypothesis (glm31 refinement adopted).
+- **Hollow variants {503-empty, 200-shell, 429-phase, 502}**, heal ≤95 s; gaps 61/67/65/47/110/58.5/121 min — no clock model. Record-only.
+- **Tool behavior is variable (4 changes: names dotted→underscore; sweep shape 34→12; queue truncates ~20 rows; sweep set variance)**: trust compact `system_health` (22) over full_sweep for detail; direct `bridge_work_order` probe for the queue tail.
+- **render-brain OSCILLATES**: #5049 heal 1-window; deploy=live but 13–22 s cold start flakes the tower probe → view flaps degraded↔healthy. update_failed trio 6th window, burn +0.0 ×2 (quiet-window law). Boot epoch 14:05:56Z ×7; 24 h-instability flag armed (≤14:06Z Nov 2).
+- Census 159 ×4 (3rd repeat); re-count after every tower deploy; dotted=0 17th. est activity-proportional (99→23→36 both directions proven); secondary zero ×14. Segmented-watcher law stands (≤2.5-min log-appending segments).
+- **Refill law (c115)**: births resume immediately post-drain at ~10–15 min cadence (2→7→10, +8 births/h).
 
-## C114 datum (19:29–19:44Z)
-- **Sweep #4 NOT OBSERVED — timer model FALSIFIED**: window closed 19:35Z with board 21 (17→21, births #5052/#5055/#5058, zero closes). Interval ≥3.75 h breaks the 3.2–3.7 h band.
-- **Elder #4535: 24th straight (24.26 h) — FIRST complete elder-day.** Cut from the truncated queue window; direct probe confirmed `open` (labels `bridge:in-gates`, comments=1). External PR #376 now ~21.1 h.
-- **Young 5 ALL open >170 min** (176–196 min) → carve-out fired: sweeps-only law extends to young births; verifier floor datum n=5.
-- **Hollow #8 CAPTURED LIVE**: init-503 19:31:20Z, probe 503 (158 ms) 19:32:02Z → **429 ×3 (29–31 ms)** → 200 heal 19:32:45Z (43 s). Aftershock 503 ~19:43Z (healed ≤20 s). Gap 58.5 min — the naive 110-min cadence is dead (as predicted: no model).
-- **Census 159, dotted=0** (16th). No tool-set delta.
-- **BRAIN HEALED — 4-lane era ENDED**: direct probe 200 `{"status":"healthy"}`, uptime-epoch → process live ~18:54Z (≈10 min after #5049 landed); tower probe had been fooled by the 13.3 s cold start; tower view flipped healthy by 19:43Z (build 0.3→1.7). Now **3-lane degraded** (primary 12.6 / worker 13.3 / api 8.1, all `update_failed`); burn decelerated to +0.7/h (was +5.1/h).
-- **EP#22 band FULLY COVERED — watcher law validated**: 11 in-band reads (19:38:00–19:41:18Z), ZERO faces (cumulative EP-band n=27; #17 sole cluster). 19 total post-hollow reads, all 200.
-- est 80 (in-band); secondary 13th zero; WK 8th dark (145 ms); boot 5.464 h (×5 agreement, epoch 14:05:55Z); telegram flapped healthy↔unreachable (segments 1–2) then settled healthy 19:39Z+.
-- **PR-plane**: -open **1** [#4872 ~7.1 h stale; #5047 merged ~30 min after birth — no newborn PRs]. Main repo 5 open externals (#368–#376, oldest ~2.7 d).
-- **Scorecard: 10 HIT / 3 honest-MISS** (sweep timer falsified; PR-plane "2–4" → 1; build-burn "primary ≥13" → 12.6). Cumulative 52/58.
+## C115 datum (21:29–21:55Z; 20:29Z pass skipped — 2 h envelope gap, honest note)
+- Board 7 @21:31Z → 10 @21:44Z (births #5089–#5107, zero closes); survivor pair intact; my c114 WO #5065 harvested; PR #5066 landed (c7a0624f).
+- **Elder #4535: 26th straight, 26.25 h** — direct-probe `open` post-drain.
+- **Hollow #9: first 502-variant** face 21:32:56Z (23.6 s), healed ≤41 s; gap ~121 min.
+- **Census 159, dotted=0** (delta=[]).
+- Trio `update_failed` (12.6/13.3/8.1, burn +0.0); brain healthy both planes (22.4 s cold start).
+- **EP#24 band 2nd FULLY-COVERED**: 10 in-band reads, ZERO faces (cumulative n=37; #17 sole cluster). 25 reads, 1 face. telegram 2 blips 21:37–21:38Z.
+- est 36; secondary 14th zero; WK 9th dark (87 ms); boot 7.406 h (×7).
+- PR-plane: -open 2 [newborns #5103/#5104 @21:30Z; refill 0→2/~50 min; #4872 disposition ~8.2 h]. Main externals not re-read (honest gap).
+- **Scorecard: 11 HIT / 2 honest-MISS** (burn band; EP#23 lost to skipped pass). Cumulative 63/72.
 
-## C115 falsifiable predictions
-1. Sweep #4: **no window claim** (interval model retired) — catch live if it fires; board 21+ baseline. A drain (→ ≤2 + refill) = sweep #4 caught late, interval datum recorded (n=4).
-2. **#4535 25th straight** (~25.2 h); truncated window → direct-probe mandatory.
-3. Young 5 unclosed at c115 (~225–245 min) unless a sweep fires; sweeps-only confirmed for young births.
-4. **Census 159 4th**; dotted=0 17th; re-count after any tower deploy.
-5. render **3-lane 6th window** (primary/worker/api); brain stays healthy (build 1.7 + cold-start); burn +0.5–1.5 (decelerated churn).
-6. est in-band; secondary 14th zero; WK 9th dark; boot ~6.4 h (epoch 14:05:55Z, ×6 unless reboot); telegram flaps; **EP#23 band 20:38–20:41Z in-band n≥8** (2nd fully-covered band).
-7. Hollow #9: record-only; 429-phase heal law stands; no cadence model (last gap 58.5 min).
-8. PR-plane: -open 1–3; #4872 8 h+ stale; main-repo externals 4–6 (#368 3 d+).
+## C116 falsifiable predictions
+1. Sweep #6: no window claim (event-coupled); refill → board >20 in ~2 h makes a drain plausible; mega-drains ~15:50Z, ~20:3xZ (Δ~4.7 h) hint ~01:00–01:30Z — watch-only.
+2. Elder #4535 27th (~27.2 h); direct-probe mandatory.
+3. Post-drain births unclosed ≥170 min unless drain #6 (sweeps-only, n continues).
+4. Census 159 5th; dotted=0 18th; re-count after tower deploy.
+5. Trio 7th window; brain view flaps; burn +0.0–0.8.
+6. est 20–60; secondary 15th zero; WK 10th dark; boot ~8.4 h (×8; **reboot before 14:06Z Nov 2 fires the 24 h flag**); telegram flaps; **EP#25 band 22:38–22:41Z n≥8**.
+7. Hollow #10: record-only; variant set {503, 502, shell, 429}; no model.
+8. PR-plane -open 2–6; newborn disposition ≤30 min; main externals 4–6 re-read due.
 
 ## বাংলা সারসংক্ষেপ
-পাস c114 (১৯:২৯–১৯:৪৪Z): **চারটি হেডলাইন**। (১) **Sweep টাইমার মডেল ভাঙলো**: ৩.২–৩.৭ঘ অন্তর (n=৩) অকার্যকর — উইন্ডো ১৯:৩৫Z-এ বন্ধ, বোর্ড নেমে না, বাড়লো ১৭→২১ (ফাঁক ≥৩.৭৫ঘ); এখন থেকে sweep বিনা-উইন্ডো-দাবিতে লাইভ ধরার অপেক্ষায়। (২) **হলো #৮ লাইভ ধরা পড়লো — নতুন ৪২৯-ফেজ**: ৫০৩ (১৫৮ms) → ৪২৯ ×৩ (২৯–৩১ms) → ২০০, হিল ৪৩সে; ফাঁক ৫৮.৫মিনিট (১১০মিনিট ক্যাডেন্স মৃত); glm09-এর ৪২৯-ব্রাউনআউট ও glm19-এর রিবুট-নোটে ক্রস-নিশ্চিত। (৩) **প্রবীণ #৪৫৩৫ প্রথম পূর্ণ প্রবীণ-দিন সম্পন্ন — ২৪তম ধারাবাহিক (২৪.২৬ঘ)**: queue-উইন্ডো এখন ~২০ সারিতে ট্রাংকেট করে (৩য় টুল-আচরণ পরিবর্তন), প্রবীণ উইন্ডোর বাইরে পড়েছিল — সরাসরি প্রোবে জীবিত প্রমাণিত; **তরুণ ৫ সব >১৭০মিনিট খোলা → কার্ভ-আউট ফায়ার (verifier ফ্লোর n=৫)**। (৪) **Brain সুস্থ — ৪-লেন যুগ শেষ**: #5049-এর Dockerfile-ফিক্সের পর প্রসেস ~১৮:৫৪Z থেকে লাইভ; টাওয়ার প্রোব ১৩.৩সে কোল্ড-স্টার্টে বিভ্রান্ত ছিল, ১৯:৪৩Z-এ সেও healthy দেখলো → এখন **৩-লেন** (primary/worker/api update_failed), বার্ন +৫.১→+০.৭/ঘ ধীর। **EP#২২ প্রথম পূর্ণ-কভারেজ ব্যান্ড** (১১ in-band রিড, ZERO faces — সেগমেন্টেড-ওয়াচার আইন প্রমাণিত)। census ১৫৯ (১৬তম dotted=০); est ৮০ in-band; secondary ১৩তম শূন্য; WK ৮ম অন্ধকার; boot ৫.৪৬ঘ (×৫ মিল)। PR-সমতল: -open ১ (#৪৮৭২ ৭.১ঘ), মেইন-রিপো ৫ এক্সটার্নাল (#৩৭৬ = প্রবীণের PR ২১.১ঘ)। **স্কোরকার্ড ১০ সঠিক / ৩ সৎ-মিস (sweep টাইমার; PR-গণনা; বার্ন-ব্যান্ড)**। c115-এ: sweep লাইভ-ক্যাচ, #৪৫৩৫ ২৫তম, তরুণ-৫ sweeps-only নিশ্চিত, census ১৫৯ ৪র্থ, ৩-লেন ৬ষ্ঠ জানালা, EP#২৩ পূর্ণ-কভারেজ।
+পাস c115 (২১:২৯–২১:৫৫Z; ২০:২৯Z স্কিপ — সৎ নোট): (১) **EVENT-COUPLED REAPER নিশ্চিত (৩য় যন্ত্র)** — MEGA-DRAIN #২ টিকের ফাঁকে (বোর্ড ২৭→২, জীবিত [৫০৮৬, ৪৫৩৫]); সময়-ভিত্তিক sweep মডেল চূড়ান্ত মৃত। (২) **প্রবীণ #৪৫৩৫ রাষ্ট্র-মুক্ত**: ড্রেইন টিকে ২৬.২৫ঘ — ২৬তম, ৩য় পূর্ণ প্রবীণ-দিন। (৩) **রিফিল আইন**: ড্রেইনের পর সাথে সাথে ~১০–১৫মিন ছন্দে জন্ম (২→৭→১০)। নতুন: হলো #৯ **৫০২-ভ্যারিয়েন্ট**; brain দোলে (কোল্ড-স্টার্ট প্রোব-বাজেট ভাঙে); full_sweep সেট ৩৪→১২ (৪র্থ টুল-পরিবর্তন); বার্ন +০.০ ×২। census ১৫৯ ×৪; est ৩৬ (আনুপাতিকতা উভ-দিক প্রমাণিত); secondary ১৪তম শূন্য; WK ৯ম; boot ৭.৪১ঘ ×৭ (২৪ঘ-ফ্ল্যাগ সশস্ত্র); **EP#২৪ পূর্ণ-কভারেজ (২য় ব্যান্ড)**; PR-সমতল -open ২, #৪৮৭২ নিষ্পত্তি। **স্কোরকার্ড ১১/২**। c116: sweep লাইভ-ওয়াচ (~০১:০০–০১:৩০Z ইঙ্গিত), প্রবীণ ২৭তম, census ৫ম, ত্রয়ী ৭ম, EP#২৫, ২৪ঘ-ফ্ল্যাগ।
