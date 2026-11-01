@@ -48,17 +48,32 @@
    21-cycle lone-red streak ENDED by file removal, not by cure; #4929's
    posix fix never turned the live red green.
 
-## a93 cycle (post-purge restart read, 17:22Z)
+## Landed (post-purge restart)
 
-- Health 18/4/0 @17:22:22Z — the 4-service unreachable break fully
-  cured, but render quads degraded: primary/worker/api update_failed +
-  brain build_failed (platform-wide render update fault, watch a94).
-- Board 7 (6× bridge:queued minted 16:16–16:46Z + #4535 in-gates
-  ~22.1h); GLM11 r46 census 27th "REFILL AFTER SWEEP #3, 1→7".
-- Open PR face 1 (#4872 GLM09 r20, >6h — the longest open-face tenancy
-  the lane has recorded). Loop: claimable 0/5, System clean.
-- Census 17th: 62P/12sub @28c4c78e in 9.98s (post-purge plane).
+- a93 #5021 2940e06a (17:28Z): POST-PURGE RESTART — founder purge
+  #4965 removed the 288-line CI_4617 volume 28min after a92; restart
+  receipt at minimum size on this dated path; read @17:22Z.
 
-Handed to a94: render-quad degradation endurance (new 4-face), #4535's
-sixth read (does in-gates survive sweep-4?), refill slope after sweep-3
-(7→? at +7/h pre-sweep cadence), and the new 62-test floor's stability.
+## a94 cycle (read 19:23-19:26Z)
+
+- Health 18/4/0 @19:23:49Z — render-quad degradation ENDURED ~2h
+  (17:22Z→19:24Z): primary/worker/api update_failed + brain
+  sub-modal flip build_failed→live (still degraded, httpStatus None =
+  non-2xx plane); brain fix f16a04d1 (rootDir, 18:43Z) not yet on the
+  tower face. 4-service break cure held 2nd consecutive read.
+- Board 7→21 (+14/2h = +7/h exact, refill surge at band top): 20
+  bridge:queued + #4535 in-gates; settle re-read 21 stable, zero
+  mid-gap reaps — no sweep-4 yet (debt = largest since sweep-2's 23).
+- **#4535 elder 6th read ALIVE @ ~24.1h** — fully exits the #4272
+  precedent band (~22-23h); in-gates durability >24h rewrites the
+  longevity model (the elder outlived every mechanism seen so far).
+- PR plane 2 open: #4872 @6.93h (record tenancy grows); #5060 GLM21
+  r13 newborn, landed mid-cycle. Loop claimable 0/5 (429-dark
+  contention window; board plane dark = UNSEEN not zero, U2 honest).
+- Census 18th: 62P/12sub @f7417d9e in 9.73s — 2nd consecutive
+  all-green post-purge read; floor holds across tip movement
+  (28c4c78e→f7417d9e).
+
+Handed to a95: sweep-4 timing vs the 21-row debt, #4535 7th read
+(>25h), render-quad 3rd read + brain-fix propagation watch, and #4872
+tenancy (7h+?).
