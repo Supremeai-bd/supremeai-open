@@ -1,7 +1,0 @@
-{
-  "title": "Example repair request",
-  "error": "KeyError: missing_provider",
-  "keywords": ["missing_provider", "provider"],
-  "files": ["backend/services/example.py"],
-  "likely_suffixes": [".py"]
-}
