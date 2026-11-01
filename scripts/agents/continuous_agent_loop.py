@@ -3513,6 +3513,13 @@ def hooks_path_advisory() -> str | None:
     অক্ষত)। git-কনফিগ মিউটেশন করে না (option D প্রত্যাখ্যাত — অপারেটর-সম্মতি);
     worktree না হলে নীরব; নেটওয়ার্ক-মুক্ত তাই offline-এও সৎ।
 
+    #4987-পরবর্তী সত্য (2026-11-01): লিন-কাম্পেইন (#762) activator স্ক্রিপ্টটি
+    (scripts/ops/activate_githooks.py) মেইন থেকে সরিয়ে দিয়েছে — কিন্তু
+    `.githooks/` স্যুট ও এই প্রোব রয়ে গেছে। সক্রিয়করণ এখন git-নেটিভ এক
+    লাইন — কোনো স্ক্রিপ্ট-পাথ নির্ভরতা নেই, তাই কোনো আর্টিফ্যাক্ট-পাথ
+    dangle করতে পারে না (আত্মযাচাই-নিয়ম: advisory কখনো অস্তিত্বহীন পাথ
+    শেখাবে না — পুরনো activator-নির্ভর দ্বি-শাখা নকশা এখানেই মরে গেছে)।
+
     Returns:
         str | None: stderr-এ মুদ্রণযোগ্য এক-লাইন advisory, বা None (সক্রিয়/প্রযোজ্য নয়)।
     """
@@ -3523,23 +3530,15 @@ def hooks_path_advisory() -> str | None:
     rc_repo, _, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"], timeout=10)
     if rc_repo != 0:
         return None
-    # বাংলা: আত্মযাচাই (Invariant 6, #4070-শ্রেণি) — advisory যে স্ক্রিপ্ট-পাথ
-    # শেখায় সেটি এই ক্লোনে অস্তিত্বহীন হলে ভুল-আদেশ মুদ্রণ নিষিদ্ধ; একটি
-    # সৎ-পুরোনো-ক্লোন বার্তা দেয় (rebase করলেই activator আসবে)।
-    activator = "scripts/ops/activate_githooks.py"
-    if not os.path.isfile(activator):
-        return (
-            "hooks-path probe: core.hooksPath is unset and the advertised activator "
-            f"({activator}) is absent in this older clone — rebase origin/main to a "
-            "landing that carries scripts/ops/activate_githooks.py, then run "
-            "python3 scripts/ops/activate_githooks.py --activate"
-        )
+    # বাংলা: git-নেটিভ এক-লাইন আদেশ — স্ক্রিপ্ট-মুক্ত তাই আত্মযাচাই সরল
+    # (Invariant 6, #4070-শ্রেণি): আদেশটি git-এর নিজস্ব, কোনো রিপো-ফাইলের
+    # ওপর নির্ভর করে না — পুরনো বা নতুন যে-কোনো ক্লোনে সৎ ও কার্যকর।
     return (
         "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
         ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
-        "by git default ($GIT_DIR/hooks). One-line activation (idempotent, exec-bit "
-        "guarded): python3 scripts/ops/activate_githooks.py --activate "
-        "(report-only: --verify; R63/#2343 bootstrap-gap close-out)"
+        "by git default ($GIT_DIR/hooks). One-line activation (git-native, no script; "
+        "the python activator was pruned from main by #4987 per the #762 lean mandate): "
+        "git config core.hooksPath .githooks (R63/#2343 bootstrap-gap close-out)"
     )
 
 def diff_rule_freshness(
