@@ -2,26 +2,33 @@ import React, { useState } from 'react';
 import { GitCompare, Check, Copy, ArrowLeft, ArrowRight, Layers } from 'lucide-react';
 
 interface CodeDiffViewerProps {
-  fileName: string;
-  originalCode: string;
-  modifiedCode: string;
+  fileName?: string;
+  originalCode?: string;
+  oldCode?: string;
+  modifiedCode?: string;
+  newCode?: string;
   language: 'bn' | 'en';
 }
 
 export const CodeDiffViewer: React.FC<CodeDiffViewerProps> = ({
-  fileName,
+  fileName = 'index.html',
   originalCode,
+  oldCode,
   modifiedCode,
+  newCode,
   language,
 }) => {
   const [diffMode, setDiffMode] = useState<'split' | 'unified'>('split');
   const [copied, setCopied] = useState(false);
 
-  const origLines = originalCode.split('\n');
-  const modLines = modifiedCode.split('\n');
+  const baseOrig = originalCode ?? oldCode ?? '';
+  const baseMod = modifiedCode ?? newCode ?? '';
+
+  const origLines = baseOrig.split('\n');
+  const modLines = baseMod.split('\n');
 
   const handleCopyMod = () => {
-    navigator.clipboard.writeText(modifiedCode);
+    navigator.clipboard.writeText(baseMod);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

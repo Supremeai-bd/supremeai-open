@@ -14,6 +14,7 @@ export interface VersionSnapshot {
   timestamp: string;
   author: 'JARVIS Agent' | 'Developer';
   summary: string;
+  html?: string;
   files: Record<string, string>; // path -> content
   diffSummary: {
     added: number;
@@ -27,6 +28,7 @@ export interface SelectedElementInfo {
   tagName: string;
   className: string;
   textContent: string;
+  text?: string;
   boundingRect: {
     top: number;
     left: number;

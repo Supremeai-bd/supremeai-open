@@ -93,6 +93,35 @@ class JarvisAudioEngine {
   /**
    * Diagnostic / Scan Tone (Subtle high-tech data sweep)
    */
+  playDeactivate() {
+    if (!this.soundEnabled) return;
+    try {
+      this.initContext();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.15);
+
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } catch (_err) {
+      /* AudioContext unavailable or autoplay blocked */
+    }
+  }
+
+  /**
+   * Diagnostic / Scan Tone (Subtle high-tech data sweep)
+   */
   playScan() {
     if (!this.soundEnabled) return;
     try {

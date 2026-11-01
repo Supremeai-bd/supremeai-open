@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Sparkles, Send, X, Check, MousePointerClick, Zap, CornerDownLeft } from 'lucide-react';
 import type { SelectedElementInfo } from '../../types/worldclass';
 
-interface VisualElementInspectorProps {
+export interface VisualElementInspectorProps {
   isOpen: boolean;
   onClose: () => void;
   selectedElement: SelectedElementInfo | null;
-  onApplyMicroPrompt: (prompt: string, element: SelectedElementInfo) => void;
+  onApplyMicroPrompt?: (prompt: string, element: SelectedElementInfo) => void;
+  onApplyPrompt?: (prompt: string, element: SelectedElementInfo) => void;
   language: 'bn' | 'en';
 }
 
@@ -15,12 +16,15 @@ export const VisualElementInspector: React.FC<VisualElementInspectorProps> = ({
   onClose,
   selectedElement,
   onApplyMicroPrompt,
+  onApplyPrompt,
   language,
 }) => {
   const [microPrompt, setMicroPrompt] = useState('');
   const [isApplying, setIsApplying] = useState(false);
 
   if (!isOpen || !selectedElement) return null;
+
+  const handleApply = onApplyPrompt || onApplyMicroPrompt;
 
   const quickChips = [
     { labelBn: 'গোল্ডেন গ্র্যাডিয়েন্ট', labelEn: 'Golden Gradient', prompt: 'Make this button a luxury golden gradient with deep shadow.' },
@@ -32,7 +36,9 @@ export const VisualElementInspector: React.FC<VisualElementInspectorProps> = ({
   const handleSubmit = () => {
     if (!microPrompt.trim() || isApplying) return;
     setIsApplying(true);
-    onApplyMicroPrompt(microPrompt, selectedElement);
+    if (handleApply) {
+      handleApply(microPrompt, selectedElement);
+    }
     setTimeout(() => {
       setIsApplying(false);
       setMicroPrompt('');
