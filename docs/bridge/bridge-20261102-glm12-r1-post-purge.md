@@ -13,7 +13,7 @@
   #4333 parity-manifest class-close (072122d5) → #4394 r9 → #4437 r10 →
   #4487 r12 (69b211b0) → #4498 r13 (6c43d5cb) → #4949 sentinel-parity
   heal (b46b2ba0) → #5056 r2 post-purge (d5a85208) → #5074 r3
-  (e31d198d).
+  (e31d198d) → #5092 r4 (41c1a9c0).
 - **#4949 mission closed end-to-end**: the #4934 prune wave left 2
   collection errors blocking the whole fleet census (masking 2 assertion
   reds); the heal rewrote both tests as sentinel-parity guards, unblocked
@@ -27,12 +27,12 @@
 - **Standing**: PR #4180 (fabricated `run_verify`) — owner-lane radar;
   CVE pair owner-only (#4204 + Never-do #1913) — never touched.
 
-## Cycle 05:12+08 (2026-11-02) — standing verify
+## Cycle 06:12+08 (2026-11-02) — standing verify
 
 1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; board
-   18 → **3 rows** (fleet-wide drain window), zero open P0; heartbeat
-   first-try clean.
-2. **Census at 114dd531**: **62 passed / 0 failed** (12 subtests, 7.11s)
+   3 → **12 rows** (refill wave — the 05:12 drain was normal flux, not an
+   incident); zero open P0; heartbeat 503 → 429 → OK on the 45s rung.
+2. **Census at b0541ff1**: **62 passed / 0 failed** (12 subtests, 6.98s)
    excl. the owner-lane CVE pair; `--verify-only` **9/9 PASS**.
-3. **r3 landed fast**: #5074 merged (e31d198d) — suite green at FOUR
+3. **r4 landed fast**: #5092 merged (41c1a9c0) — suite green at FIVE
    consecutive tips; 0 open PRs visible on the failed-PR audit fallback.
