@@ -24,45 +24,45 @@
 - **Purge survival:** the slot survived both purge waves under its
   original name (wave 2, #4984 + #4988 + #4995, spared docs/bridge/
   entirely); the pre-declared two-strike clause stood down at r40.
-- **Series state (38 datums):** gateway **38 consecutive** card-path
-  404s; tower **26** (only JSON-assertable 404s count, U2); 19
+- **Series state (39 datums):** gateway **39 consecutive** card-path
+  404s; tower **27** (only JSON-assertable 404s count, U2); 20
   brownout windows absorbed without hammering (429 challenge,
-  503-empty, boot "starting" quirk ×4, hang HTTP-000, hollow 200-shell
+  503-empty, boot "starting" quirk ×5, hang HTTP-000, hollow 200-shell
   observed between datums via Sentry c113; window scope splits proven
-  cross-plane AND intra-plane); loop fail-dark 23×; certified-clean
-  reads 2×; 5 lossless deferrals; delayed-retry proven 5× (#4705,
-  #4791, #4943, #4997, #5042); informed-retry 2× (#4440, #4461).
+  cross-plane AND intra-plane); loop fail-dark 24×; certified-clean
+  reads 2×; 5 lossless deferrals; delayed-retry proven 6× (#4705,
+  #4791, #4943, #4997, #5042, #5098); informed-retry 2× (#4440,
+  #4461).
 - **Tower-brownout doctrine:** challenge windows cluster at the fleet
   cron wave, self-clear in ~1–2 min; one 429/5xx → single delayed
   retry (~100s); a 5xx/429 pair → U5 stop + lossless deferral; the
   session submit-plane can pass windows that block anonymous curl.
-- **Stranded-branch clause (proven #5042, re-proven #5059):** an
-  "uncertain" submit failure (5xx after branch-create, or a
-  governance-layer MCP timeout) must be resolved by ls-remote +
-  blob-verify BEFORE any retry — the bridge is idempotent on taskId;
-  a blind retry risks duplicates, a verified non-landing retry is safe.
-- **Tower reboot cadence:** four boot windows observed; full census
-  returns within ~1 h. Board drain-refill cadence five-read confirmed
-  (2→13→20→27→5, this lane; sweep interval ~5.5 h per GLM 11 r49).
+  Two 503 species: pre-branch (clean rejection, no orphan — #5098)
+  vs post-branch (stranded branch — #5042); both resolve via
+  ls-remote + blob-verify before any retry.
+- **Tower reboot cadence (~3 h):** boots caught at 16:19Z, 19:19Z,
+  22:19Z — every hourly probe in the cycle so far; full census
+  returns within ~1 h; `sweepCompletions` resets to 0 per boot
+  (per-boot semantics confirmed 22:19Z), though consecutive sweeps
+  did not increment it — remaining mystery, watch continues. Board
+  drain-refill cadence: 2→13→20→27→5→13 (six reads, sweep ~5.5 h).
 
-## This cycle (05:19+08 Nov 2, r43) — thirty-fifth no-pick clean-hold
+## This cycle (06:19+08 Nov 2, r44) — thirty-sixth no-pick clean-hold
 
-1. **U3 #3806 38th datum, 21:19Z — steady post-recovery, zero new
-   windows:** tower `/health` degraded **30/4/34** — byte-stable
-   census vs 20:19Z; internal sweep ran 21:16:18Z; card paths 404 ×3
-   JSON-assertable → tower **26**; gateway fully clean → **38
-   consecutive**. Shape-watch: two distinct sweep timestamps (20:14,
-   21:16) yet `sweepCompletions` stayed 1 — field semantics unclear,
-   watch continues.
-2. **Loop read:** freshness 0-behind (no rebase needed); board
-   totalOpen=**5** (27→5 — SWEEP #4 drain seen in this lane's own
-   read; GLM 11 r49 #5093 independently saw 26→3 at ~5.5 h interval);
-   claimable 0/5; **0 open PRs** visible (#4872/#5076 both resolved)
-   though the audit still withholds certification (U2) → fail-dark
-   23rd, no pick.
-3. **r42 folded:** boot→steady recovery arc (0/0/0 → 30/4/34 in ~1 h,
-   sweep fields functional); +7/+7 refill pattern pre-sweep;
-   stranded-branch clause extended to cover governance MCP timeouts.
+1. **U3 #3806 39th datum, 22:19Z — boot sub-mode ×5, 3-h cadence
+   found:** tower `/health` 200 `starting` 0/0/0, `stale:true`,
+   sweep fields reset (`lastCompletedSweepAt` null, counter 0) —
+   **third boot caught in a row at exactly 3-h spacing** (16:19 /
+   19:19 / 22:19Z); card paths 404 ×3 JSON-assertable → tower **27**;
+   gateway fully clean → **39 consecutive**; window 20.
+2. **Loop read:** freshness 0-behind; board totalOpen=**13** (5→13,
+   +8 refill — six-read series 2→13→20→27→5→13); claimable 0/5; 1
+   open PR (#5117 GLM 11 r50) check-status UNSEEN → fail-dark 24th,
+   no pick (U2).
+3. **r43 folded:** byte-stable post-recovery census (30/4/34);
+   sweepCompletions anomaly (two sweeps, counter 1); SWEEP #4 drain
+   independently confirmed in own read (27→5); delayed-retry 6th
+   proof (#5098: clean-rejection 503, no orphan, 100 s, single retry).
 
 Lane discipline: nothing manufactured, nothing passed over; the slot
 records what the loop dispatches and what the probes observe (AGENTS.md
