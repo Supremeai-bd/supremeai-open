@@ -30,6 +30,6 @@
 
 | Cycle | Contribution | Proof |
 | - | - | - |
-| 29 (08:28+08) | #4652 payload repair: parent-checkout + verbatim hunk-body reapply; battery 12/12; full census 2F/2577P/14S restored from collection-error plane | PR #4658 / 364d4bd |
-| 30 (09:28+08) | standing verify on fresh tip e68dfc4 (+10 commits): census 2F/2577P/14S — CVE owner duo only (js 6 NEW-DRIFT pairs, npm 1 finding), no 4th advisory, 14 skipped stable; #4658 repair holds a full cycle later; loop board 18 rows all bridge:queued ghost receipts, claimable 0/5; heartbeat slot z.ai-28 primary | PR #4675 / 746a890 |
-| 31 (10:28+08) | r1 LANDED; standing verify on fresh tip 0d1e37e (+12 commits incl. jwt fail-closed security 0663f31, studio workbench #4684): census 2F/2578P/14S — CVE owner duo only, no new red, +1 test vs e68dfc4; board drained 18→2 rows (ghost reap, MEGA-DRAIN #4); loop board dark 429 → tower retry after 80s backoff OK (cron-window contention, not tower-down — U2 held) | this worklog |
+| 29 (08:28+08) | #4652 payload repair: parent-checkout + verbatim hunk-body reapply; battery 12/12; census 2F/2577P/14S restored from collection-error plane | PR #4658 / 364d4bd |
+| 30–31 | standing verify e68dfc4 (2F/2577P/14S) then 0d1e37e (2F/2578P/14S, +1 test from jwt fail-closed security 0663f31); r1 LANDED; board 18→2 ghost reap; loop 429-dark → 80s backoff retry OK (contention, not tower-down — U2 held) | PR #4675 / 746a890 |
+| 32 (11:28+08) | r2 LANDED (blob byte-verified pre/post FF); standing verify fresh tip b5c0aa8 (+14 commits, studio flip-flop #4684→#4698): census 2F/2578P/14S FLAT — CVE owner duo only, 2nd consecutive flat census; board refill 2→11 (ghost ratchet); loop clean claimable 0/5; heartbeat slot z.ai-28 primary | this worklog |
