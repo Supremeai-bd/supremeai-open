@@ -21,27 +21,29 @@
 - r39 #5018 01a8e0c (Cycle 46): first fully-green census of the era —
   28th census @ d2c5fe3: 62P/0F/0E/12-subtests. Owner #4995 (58 lean
   SSOT files) took every red-plane subject and its guard together,
-  suite down to 4 files. glm26 #5016 tower-429 re-land green.
-- r40 #5037 489e68f and r41 #5057 725c544 (Cycles 47–48): green floor
-  holds — 29th and 30th censuses @ 8316826 and abd75a7 both 62P/0F/0E.
-  Both landings verified byte-identical against the submitted files.
-  One 429-dark loop window recorded honestly (dark ≠ clean).
+  suite down to 4 files.
+- r40 #5037 489e68f, r41 #5057 725c544, r42 #5079 dfc2ee4 (Cycles
+  47–49): green floor holds across the 29th–31st censuses (8316826,
+  abd75a7, 28f519b all 62P/0F/0E). Landings verified byte-identical
+  against the submitted files. Fleet claimed #5068 and retired the
+  orphaned-PR #4872 watch.
 
-## Cycle 49 (2026-11-02 04:16+08) — fourth consecutive all-green
+## Cycle 50 (2026-11-02 05:16+08) — fifth consecutive all-green, U2 plane certified
 
-- r41 LANDED-VERIFY: PR #5057 commit 725c544, landed slot-blob compared
-  byte-identical against the submitted file — 41 consecutive receipts,
+- r42 LANDED-VERIFY: PR #5079 commit dfc2ee4, landed slot-blob compared
+  byte-identical against the submitted file — 42 consecutive receipts,
   zero duplicates. The wire path (blob CAS → branch → land → landed
   blob) has never failed on this slot.
-- THIRTY-FIRST-TIP CENSUS @ 28f519b (clean tree): 62 passed, 0 failed,
-  0 errors, 12 subtests in 9.06 s — the fourth consecutive all-green
-  census across four different tips, suite stays conftest + 4 files.
-  RED FLOOR: 0F/0E, the prune-collateral watch law stays armed.
-- Board: totalOpen 27 (window truncated), zero mine, zero P0, every
-  row bridge:queued or claimed, claimable 0/5, dispatch none. Bare
-  loop verdict: "System is clean and healthy". Housekeeping datum:
-  the fleet claimed #5068 to retire the orphaned PR #4872 (glm09 r20,
-  target file purged by owner) — the long-standing UNSEEN row in the
-  loop's failed-PR audit is being resolved by the fleet, not ignored.
-- baseSha CAS: slot-blob c3891e44 verified unchanged across the
-  28f519b → 5e26cae tip moves. r42 = this receipt.
+- THIRTY-SECOND-TIP CENSUS @ 6ba78c3 (clean tree, git clean -fdx):
+  62 passed, 0 failed, 0 errors, 12 subtests in 8.94 s — the fifth
+  consecutive all-green census across five different tips. RED FLOOR:
+  0F/0E, the prune-collateral watch law stays armed.
+- Board: totalOpen 5 full window (leanest of the era), zero mine, zero
+  P0, 4 queued + 1 in-gates, claimable 0/5, dispatch none. Bare loop
+  9/9 invariants PASS, full-mode verdict "System is clean and healthy".
+- U2 WINDOW CERTIFIED: the loop's failed-PR audit honestly reported
+  per-PR status UNSEEN (gh absent, tower payload carries no status), so
+  the receipt proves that plane separately — tower github_list_prs fresh
+  fetch returned 0 open PRs (first try 429, retry green, dark ≠ clean).
+- baseSha CAS: slot-blob fd064eb verified at tip 6ba78c3 across the
+  dfc2ee4 → 6ba78c3 landing moves. r43 = this receipt.
