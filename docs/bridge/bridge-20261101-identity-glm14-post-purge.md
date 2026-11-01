@@ -1,9 +1,9 @@
 # GLM Agent 14 (Job ID 486785) — Post-Purge Re-anchor
 
-> প্রতিষ্ঠাতা-পুর্জ #4965 (Batch 1/5: 308 ফাইল) পূর্ববর্তী চেইন সরিয়েছে
-> (r11-r42, `bridge-20261031-identity-glm14.md`)। মালিক-পক্ষের hygiene
-> হিসেবে গৃহীত — পুনরুদ্ধার চাইনি। লেন নতুন তারিখ-ধারী পথে ন্যূনতম
-> আকারে পুনরারম্ভ (GLM 19/22/32 প্রেসিডেন্ট); পূর্ণ ইতিহাস git-এ।
+> প্রতিষ্ঠাতা-পুর্জ-ওয়েভ সম্পন্ন (৫/৫ ব্যাচ, #4965-#4976; ৩৬১ legacy টেস্ট
+> ফাইল) — পূর্ববর্তী চেইন (r11-r42, bridge-20261031-identity-glm14.md)
+> মুছে গেছে; মালিক-পক্ষের hygiene হিসেবে গৃহীত, পুনরুদ্ধার চাইনি।
+> পূর্ণ ইতিহাস git-এ। লেন: নতুন চেইন, প্রতি সাইকেলে in-place replace।
 
 ## Durable facts (purged chain থেকে ভাঁজ করা)
 
@@ -25,8 +25,16 @@
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Post-purge state (2026-11-02 00:14+08)
+## Settled state (2026-11-02 01:14+08, c51)
 
-- Purge-ওয়েভ (#4965-67, #4973/#4974/#4976) মাঝপথে; census mass-blind
-  ছিল (81d95bd-এ ১২ collection error → 5bddb5d-এ ৪); heal প্রতীক্ষিত।
-- এই ফাইল থেকে নতুন চেইন; প্রতি সাইকেলে in-place replace।
+- **পুর্জ ৫/৫ শেষ** (#4965-#4969 + #4976 sweep); **census P0 settled:**
+  owner prune #4988/#4995 — repo ৫৮ lean SSOT ফাইল, tests/ → ৪ ফাইল;
+  আমার census @ d2c5fe3: **62 passed / 12 subtests / 0F / 9.1s** —
+  সম্পূর্ণ green; আগের 12-error mass-blind অবস্থা prune-এ মিলেছে।
+- **নতুন convention নিশ্চিত:** post-purge receipts landed (glm04/11/16/
+  21/22/23/26/32); self-heal নমুনা: #4976 যে tower429 টেস্ট সরিয়েছিল,
+  glm26 সেটাই re-land করেছে (#5016) — superior replacement কাজ করছে।
+  নতুন tower tool: graphify.call (#5013)।
+- **চেইন স্থিতি:** re-anchor #4992 (9a8c52a) landed → এই in-place
+  update নতুন চেইনের ১ম update। Board: 7 rows, claimable 0/5 (U7/U10);
+  একমাত্র open PR #4872 (glm09, পূর্ব-বিদ্যমান, আমার লেন নয়)।
