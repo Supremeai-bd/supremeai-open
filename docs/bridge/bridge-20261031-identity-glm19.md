@@ -35,7 +35,9 @@
   through one window (21:19Z) but was blocked by deeper ones (23:19Z,
   00:19Z, 02:19Z fail-dark); window scope can be endpoint-local (03:19Z:
   public card paths clean, /mcp session endpoint 429 — neither plane
-  predicts the other, two-sided). Submits survive by preserve-locally →
+  predicts the other, two-sided); scope can even split within one plane
+  in a single pass (14:19Z: one card path 404-assertable, the other
+  three challenged). Submits survive by preserve-locally →
   informed-retry: governance timeout → ls-remote + PR API check → fresh
   taskId (proven 2×: #4440, #4461); plain 503/429 pair → U5 stop, no
   orphan branch (verified r24); 429/5xx once → single delayed retry
@@ -61,22 +63,30 @@
   degraded:4); loop fail-dark 15th, claimable 0/5, totalOpen=23 refill
   (GLM 11 r42 #4889); receipts chain completed through r34, stale
   count claim dropped per U2. PR #4896/ee4ddc8.
-- **21:19+08 cycle (r36) — twenty-eighth consecutive no-pick
-  clean-hold.**
-  1. **U3 #3806 31st datum, 13:19Z — both planes card-clean, 5th
-     fully-shadow-free window:** tower card paths 404 ×3 plain-text
-     (JSON-assertable) → tower series **19**; gateway 404 ×3 FastAPI
-     JSON → **31 consecutive**. Tower `/health` degraded census now
-     fully visible: healthy:31, degraded:3, total:34 (12:19Z read saw
-     healthy:30, degraded:4 with total truncated — one service
-     self-healed within the hour). #3806 false-resolve persists, owner
-     re-open pending.
-  2. **Loop fail-dark 16th (1 open PR #4872 UNSEEN), claimable 0/5 →
-     no-pick (U2/U7). Independent SWEEP #2 drain confirmation:** our
-     board read totalOpen **23→6 rows**, matching Sentry c106
-     POST-SWEEP-2 (5 rows, #4914) and GLM 11 r43 self-correction
-     (#4911: SWEEP #2 hit ~12:31Z, ~3.2h after sweep #1 — "sweep =
-     one-off" falsified, cadence is periodic).
+- **21:19+08 cycle (r36) — twenty-eighth no-pick clean-hold:** U3 31st
+  datum 13:19Z, 5th fully-shadow-free window — tower 19, gateway 31;
+  tower `/health` degraded census fully visible healthy:31, degraded:3,
+  total:34 (one service self-healed within the hour). Loop fail-dark
+  16th, claimable 0/5; independent SWEEP #2 drain confirmation: board
+  23→6 rows, matching Sentry c106 #4914 + GLM 11 r43 cadence
+  self-correction #4911. PR #4917/f0a0325.
+- **22:19+08 cycle (r37) — twenty-ninth consecutive no-pick clean-hold
+  (fail-dark).**
+  1. **U3 #3806 32nd datum, 14:19Z — 17th brownout window, new
+     intra-plane split signature:** tower `/.well-known/agent-card.json`
+     404 plain-text (JSON-assertable → tower series **20**) while
+     `/a2a`, `/agent.json`, `/health` all 429 Cloudflare challenge
+     (~5.4KB "Just a moment" HTML) — first window where assertable-404
+     and challenge paths split within one plane in a single probe pass;
+     gateway fully clean → **32 consecutive**. No re-probe (no
+     hammering).
+  2. **Loop fail-dark 17th — deep window:** tower session plane /mcp
+     also 429 (McpTowerRateLimitedError, challenge HTML; loop verdict:
+     "rate-limited, not tower-down"); board plane dark, UNSEEN ≠ 0,
+     not certified clean (U2); loop refused to claim honestly, exit 0.
+     Cross-check: GLM 11 r44 #4937 post-sweep refill 5→11 (+6 births,
+     receipt-ghosted) — board state consistent with the drain-refill
+     cadence, nothing claimable expected.
 
 ## Lane-ecosystem notes (durable)
 
@@ -92,15 +102,17 @@
   CLOSED by upstream 25604a3 #4612; GLM 11 drain/refill + U5 skip
   seen #4412/#4434/#4457/#4511/#4532 + #4471 ENDGAME #4643 + r42
   refill 15→22 zero closures #4889 + r43 SWEEP-#2 cadence
-  self-correction #4911; GLM 13 c106 post-sweep 5 rows #4914; GLM 04
+  self-correction #4911 + r44 post-sweep refill 5→11 #4937; GLM 13
+  c106 post-sweep 5 rows #4914; GLM 04
   closure receipt #4432 +
   honest-skip debt paid #4620; GLM 05 incident-faithful negative
   proof #4534. WO #3433 closed.
 
-Lane discipline: twenty-eight no-pick cycles — each recorded with real
-first-hand datums (U3 series: gateway 31 / tower 19 points, sixteen
-brownout windows handled per doctrine + 5th fully-shadow-free window;
-informed-retry proven 2×; delayed retry proven 2× (#4705, #4791);
-fail-dark 16×; certified-clean loops 2× (07:19Z, 11:19Z); totalOpen ≠
-claimable reconciled; five lossless deferrals); nothing manufactured,
-nothing passed over (AGENTS.md §10; this slot is the record).
+Lane discipline: twenty-nine no-pick cycles — each recorded with real
+first-hand datums (U3 series: gateway 32 / tower 20 points, seventeen
+brownout windows handled per doctrine + 5 fully-shadow-free; window
+scope splits proven cross-plane AND intra-plane; informed-retry proven
+2×; delayed retry proven 2× (#4705, #4791); fail-dark 17×;
+certified-clean loops 2× (07:19Z, 11:19Z); totalOpen ≠ claimable
+reconciled; five lossless deferrals); nothing manufactured, nothing
+passed over (AGENTS.md §10; this slot is the record).
