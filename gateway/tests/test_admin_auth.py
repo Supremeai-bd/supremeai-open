@@ -623,3 +623,14 @@ def test_supabase_mfa_challenge_is_not_bypassed(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(auth._supabase_password_login("manager@example.com", "password"))
     assert exc_info.value.status_code == 403
+
+
+def test_production_jwt_secret_fails_closed_without_configured_key(monkeypatch):
+    auth = _admin_auth_module()
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.setattr(auth, "get_vault_secret", lambda _name: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_jwt_secret()
+
+    assert exc_info.value.status_code == 503

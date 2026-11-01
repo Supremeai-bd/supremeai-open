@@ -8,6 +8,13 @@ const GATEWAY_API: &str = "https://supremeai-api-ulw0.onrender.com";
 const CORE_API: &str = "https://supremeai-primary-node.onrender.com";
 const MAX_ADMIN_RESPONSE_BYTES: u64 = 1_000_000;
 
+fn admin_login_path(mode: &str) -> Result<&'static str, String> {
+    match mode {
+        "owner" => Ok("/api/admin/login"),
+        _ => Err("Tenant administrator sign-in is not enabled in this desktop release.".to_string()),
+    }
+}
+
 #[derive(Clone)]
 struct AdminSession {
     token: String,
@@ -112,11 +119,7 @@ pub async fn admin_login(
         return Err("Enter a valid email and password.".to_string());
     }
 
-    let (endpoint, mode) = match mode.as_str() {
-        "owner" => (format!("{GATEWAY_API}/api/admin/login"), "owner"),
-        "tenant_admin" => (format!("{GATEWAY_API}/api/admin/tenant-login"), "tenant_admin"),
-        _ => return Err("Choose a supported admin sign-in method.".to_string()),
-    };
+    let endpoint = format!("{GATEWAY_API}{}", admin_login_path(&mode)?);
     let http = client()?;
     let response = http
         .post(endpoint)
@@ -126,33 +129,30 @@ pub async fn admin_login(
         .map_err(|_| "The SupremeAI authentication service could not be reached.".to_string())?;
     let data = parse_json_response(response, "login").await?;
 
-    if mode == "owner" {
-        match data.get("status").and_then(Value::as_str).unwrap_or_default() {
-            "otp_required" => {
-                return Ok(AdminLoginResult {
-                    status: "otp_required".to_string(),
-                    role: None,
-                    email: Some(email),
-                });
-            }
-            "totp_setup_required" => {
-                return Ok(AdminLoginResult {
-                    status: "totp_setup_required".to_string(),
-                    role: None,
-                    email: Some(email),
-                });
-            }
-            "authenticated" | "trusted_browser" => {}
-            _ => return Err("The owner sign-in could not be completed.".to_string()),
+    match data.get("status").and_then(Value::as_str).unwrap_or_default() {
+        "otp_required" => {
+            return Ok(AdminLoginResult {
+                status: "otp_required".to_string(),
+                role: None,
+                email: Some(email),
+            });
         }
+        "totp_setup_required" => {
+            return Ok(AdminLoginResult {
+                status: "totp_setup_required".to_string(),
+                role: None,
+                email: Some(email),
+            });
+        }
+        "authenticated" | "trusted_browser" => {}
+        _ => return Err("The owner sign-in could not be completed.".to_string()),
     }
 
     let role = data
         .get("role")
         .and_then(Value::as_str)
         .ok_or_else(|| "The authentication service returned an invalid role.".to_string())?;
-    let expected_role = if mode == "owner" { "admin" } else { "tenant_admin" };
-    if role != expected_role {
+    if role != "admin" {
         return Err("This account is not authorized for that workspace.".to_string());
     }
     let token = data
@@ -176,18 +176,16 @@ pub async fn admin_login(
 #[tauri::command]
 pub async fn admin_verify_totp(
     otp: String,
-    remember_device: Option<bool>,
     state: State<'_, AdminSessionState>,
 ) -> Result<AdminLoginResult, String> {
     let otp = otp.trim();
     if otp.len() != 6 || !otp.chars().all(|character| character.is_ascii_digit()) {
         return Err("Enter the six-digit verification code.".to_string());
     }
-    let remember = remember_device.unwrap_or(true);
     let http = client()?;
     let response = http
         .post(format!("{GATEWAY_API}/api/admin/totp-verify"))
-        .json(&json!({ "otp": otp, "remember_browser": remember }))
+        .json(&json!({ "otp": otp, "remember_browser": false }))
         .send()
         .await
         .map_err(|_| "The SupremeAI authentication service could not be reached.".to_string())?;
@@ -218,19 +216,10 @@ pub async fn admin_verify_totp(
 #[tauri::command]
 pub async fn admin_dashboard(state: State<'_, AdminSessionState>) -> Result<Value, String> {
     let session = current_session(&state)?;
-    let http = client()?;
-    if session.role == "tenant_admin" {
-        let response = http
-            .get(format!("{GATEWAY_API}/api/admin/tenant-dashboard"))
-            .bearer_auth(&session.token)
-            .send()
-            .await
-            .map_err(|_| "The tenant admin service could not be reached.".to_string())?;
-        return parse_json_response(response, "dashboard").await;
-    }
     if session.role != "admin" {
         return Err("This account is not authorized to view the admin workspace.".to_string());
     }
+    let http = client()?;
 
     let tenant_response = http
         .get(format!("{GATEWAY_API}/api/admin/tenant-overview"))
@@ -273,4 +262,16 @@ pub async fn admin_logout(state: State<'_, AdminSessionState>) -> Result<(), Str
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::admin_login_path;
+
+    #[test]
+    fn desktop_admin_login_only_allows_platform_owner() {
+        assert_eq!(admin_login_path("owner").unwrap(), "/api/admin/login");
+        assert!(admin_login_path("tenant_admin").is_err());
+        assert!(admin_login_path("unknown").is_err());
+    }
 }

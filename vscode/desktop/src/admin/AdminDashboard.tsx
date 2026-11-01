@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import './admin.css';
 
-type AdminAuthMode = 'owner' | 'tenant_admin';
 type AdminRole = 'admin' | 'tenant_admin';
 type LoginResult = { status: string; role?: AdminRole; email?: string };
 type Tenant = {
@@ -82,12 +81,10 @@ function TenantTable({ tenants, usageByTenant, emptyMessage }: { tenants: Tenant
 export default function AdminDashboard({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<() => void>(() => undefined);
-  const [mode, setMode] = useState<AdminAuthMode>('owner');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [needsOtp, setNeedsOtp] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [role, setRole] = useState<AdminRole | null>(null);
   const [sessionEmail, setSessionEmail] = useState('');
@@ -119,7 +116,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setNotice('');
     try {
-      const result = await invoke<LoginResult>('admin_login', { mode, email, password });
+      const result = await invoke<LoginResult>('admin_login', { mode: 'owner', email, password });
       if (result.status === 'otp_required') {
         setNeedsOtp(true);
         setNeedsSetup(false);
@@ -130,10 +127,10 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
         setNeedsOtp(false);
         return;
       }
-      if (result.status !== 'authenticated' || (result.role !== 'admin' && result.role !== 'tenant_admin')) {
+      if (result.status !== 'authenticated' || result.role !== 'admin') {
         throw new Error('The authentication service returned an invalid session.');
       }
-      setRole(result.role);
+      setRole('admin');
       setSessionEmail(result.email || email);
       await refreshDashboard();
     } catch (error) {
@@ -149,7 +146,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setNotice('');
     try {
-      const result = await invoke<LoginResult>('admin_verify_totp', { otp, rememberDevice });
+      const result = await invoke<LoginResult>('admin_verify_totp', { otp });
       setOtp('');
       if (result.status !== 'authenticated' || result.role !== 'admin') {
         throw new Error('The verification service returned an invalid session.');
@@ -284,7 +281,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
               <span className="admin-eyebrow">SUPREMEAI · ADMINISTRATION</span>
               <h1>Operations,<br /><em>in one place.</em></h1>
               <p>Sign in to review system health and tenant usage. This first release is read-only; it cannot change accounts, limits, or service settings.</p>
-              <div className="admin-security-note"><span aria-hidden="true">●</span><span>Tenant scope is assigned server-side. Tenant IDs are never accepted from this screen.</span></div>
+              <div className="admin-security-note"><span aria-hidden="true">●</span><span>Tenant-admin sign-in is disabled until owner-controlled provisioning, scoped permissions, and audit controls are ready.</span></div>
             </div>
             <form className="admin-login-card" onSubmit={needsOtp ? verifyTotp : signIn}>
               <div className="admin-card-kicker">SECURE ACCESS</div>
@@ -292,29 +289,24 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                 <>
                   <h2>Two-factor setup required</h2>
                   <p className="admin-form-copy">Complete owner TOTP enrollment through the existing admin setup flow, then return here to sign in.</p>
-                  <button type="button" className="admin-button admin-button--primary" onClick={() => { setNeedsSetup(false); setMode('owner'); }}>Back to sign in</button>
+                  <button type="button" className="admin-button admin-button--primary" onClick={() => setNeedsSetup(false)}>Back to sign in</button>
                 </>
               ) : needsOtp ? (
                 <>
                   <h2>Verify it’s you</h2>
                   <p className="admin-form-copy">Enter the six-digit code from your authenticator app.</p>
                   <label className="admin-field"><span>AUTHENTICATION CODE</span><input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" /></label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--muted)', cursor: 'pointer', margin: '4px 0 12px' }}>
-                    <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} style={{ accentColor: 'var(--acid)', width: '15px', height: '15px', cursor: 'pointer' }} />
-                    <span>Trust this desktop device (Save device — skip OTP for 30 days)</span>
-                  </label>
                   <button type="submit" className="admin-button admin-button--primary" disabled={busy || otp.length !== 6}>{busy ? 'Verifying…' : 'Verify and continue'}</button>
                   <button type="button" className="admin-text-button" onClick={() => { setNeedsOtp(false); setOtp(''); }}>Use a different sign-in</button>
                 </>
               ) : (
                 <>
                   <h2>Sign in</h2>
-                  <p className="admin-form-copy">Choose the account type for your existing SupremeAI credentials.</p>
-                  <label className="admin-field"><span>SIGN-IN METHOD</span><select value={mode} onChange={(event) => setMode(event.target.value as AdminAuthMode)}><option value="owner">Platform owner</option><option value="tenant_admin">Tenant administrator</option></select></label>
+                  <p className="admin-form-copy">Platform owner access. Verify with your existing SupremeAI credentials.</p>
                   <label className="admin-field"><span>EMAIL</span><input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
                   <label className="admin-field"><span>PASSWORD</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
                   <button type="submit" className="admin-button admin-button--primary" disabled={busy}>{busy ? 'Signing in…' : 'Continue securely'}</button>
-                  <p className="admin-form-footnote">Tenant administrator assignment is managed by the platform owner in Supabase Auth.</p>
+                  <p className="admin-form-footnote">Each desktop sign-in requires fresh verification; this client does not save a trusted-device token.</p>
                 </>
               )}
               {notice && <p className="admin-notice" role="alert">{notice}</p>}
