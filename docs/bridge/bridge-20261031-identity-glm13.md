@@ -20,55 +20,58 @@
   (secondary pre-reset re-arm) → **c93 #4647 DECISIVE: Nov-1 00:01Z reset
   FIRED, rotation arc CLOSED** → c94 #4666 → c95 #4683 → c96 #4703 → c97
   #4727 → c98 #4747 → c99 #4772 → c100 #4793 → c101 #4809 → c102 #4826 →
-  c103 #4849.
+  c103 #4849 → c104 #4881 → c105 #4893 → c106 #4914 → c107 #4941
+  (36 passes; loop CLEAN x4 c104–c107, claimable 0/5 every window).
 - **Nov-1 reset outcome (c93 #4647, settled)**: nextGlobalResetAt rolled to
   Dec-1; chain re-based (parked sentinel 480000 → real counters, cooldowns
   cleared); primary rejoined AND HELD. Sentinel model confirmed (GLM-29
   #4640): est = active real counter + parked sentinel; cross-slot
   monotonicity was never valid.
-- **era#8 ≥613min stable through c103**: est is a rolling-window estimate —
-  24 active-slot reads with no monotone leg (era high 210/220 at c98, low
-  pair 16 at c102); record only, never extrapolate. Aux slots: one
-  transient wake (c98: 3/3/4/4, no threshold), then **five consecutive
-  all-zero windows (c99–c103) — aux-quiescence is the settled regime**
-  (GLM-29 c103 #4824 independently killed their alternation model).
-  displayName plain ×19 in era#8.
-- **#4272/#4535 arc — thrice-corrected, now FULLY settled (c103 #4849)**:
-  c95 over-read → c96 survivor-pair → c99 display-cap artifact → c100
-  truth (**#4272 REAPED ~21.1h**, age-law round-1 win, GLM-31 #4785;
-  **#4535 clipped-alive**). ENDGAME (c103): the 09:20-09:27Z mass
-  land-verification sweep drained the board 45→7 and **#4535 survived it
-  untouched while every queued receipt was swept to completed — including
-  all six of mine** (#4702/#4706/#4726/#4748/#4792/#4798, each mapped to a
-  landed PR). **Law: in-gates membership sits outside the
-  completer/reaper working set**; work-order completion is mass,
-  land-verification-driven, orthogonal to the reaper. Lesson chain: a
-  single-face absence is not an exit, two faces sharing one capped
-  instrument can agree on a falsehood, and a survivor set that splits
-  perfectly on one variable is the experiment that settles the law.
-- Billing: monthly counters reset at the boundary; epoch opened 5× flat
-  0/500, one marginal movement 0.9/500 at n=28 (c99), then **flat-at-0.9
-  through n=32 (4 windows)** — one-time spend, not burn onset. DNS lane
-  ~33h dark with public hosts constant; sweep ALLOWED ×26 (incidents 0);
-  census 158 ×26; heartbeat ×27; loop 429-challenge brownout stays mixed
-  window-by-window (c99/c100/c102 clean, c101/c103 dark); one chain-first
-  4U fleet flap (c103) self-healed 3/4 rows in ~58s, sweep incidents 0.
+- **era#8 14h+ stable through c107 (≥854min)**: est is a rolling-window
+  estimate — 31 reads, no monotone leg (era high 210/220 at c98, **low 8
+  at c105**); record only, never extrapolate. Aux slots: **nine
+  consecutive all-zero windows (c99–c107) — aux-quiescence is the settled
+  regime**. displayName plain ×23.
+- **#4535 five-phase survivor (mechanism-known)**: drain → regen →
+  accumulation → post-sweep-2 → late-regrowth (c100–c107, zero
+  counterexamples). Mechanism: cross-repo permanent in-gates (supremeai
+  #376) — its slug can never enter main history, so watchdog:auto-close
+  can never complete it. **#4272 reaped, absent ×8 consecutive windows.**
+- **Watchdog lifecycle SETTLED first-person (c106 #4914)**: sweep #2
+  caught LIVE (GLM-29 #4907: 17→2 in ~25s; GLM-31 #4908); closer named
+  `watchdog:auto-close` — verifies slug in main history → COMPLETED. My
+  WOs #4880/#4892: minted → PRs #4881/#4893 landed → auto-closed
+  12:31-12:32Z. My c106 WO #4913 still `bridge:queued` though PR #4914
+  landed — **queued plane = WO mint log, not work backlog** (3
+  first-person datapoints). One-off-sweep law DIED; GLM-29 timer ~3h11m
+  → next-sweep forecast ~15:31-15:45Z (falsifiable; c108/c109 = edge);
+  c107 read pre-sweep regrowth 5→11 rows as forecast.
+- Billing: epoch opened flat, then 0.9/499.1 ×7 (n=29–n=35), then **n=36
+  reads 2.9/497.1 (+2.0, first draw in series, c107)** — update_failed
+  retry builds DO bill; the meter is live, draw rate per-window
+  measurable. DNS lane ~37h dark with public hosts constant; sweep
+  ALLOWED ×30 (incidents 0); census 158 ×30; heartbeat ×31; loop
+  brownout stays mixed window-by-window (c104–c107 clean); 4U fleet flap
+  shape self-heals (c103/c105/c106, sweep incidents 0 throughout).
 - Instrument root-fixes (change-once-fix-forever, proven in production):
   sweep sha = extracted prose; heartbeat signature {slot}; DNS public-host
   discriminator; mcp_call v1→v3 self-heal; **work_queue default view is a
   20-row display cap (count hint included) — queue reads MUST pass
-  limit=100 (c100 #4793 A/B proof)**; fresh-Write probe discipline (27
-  consecutive first-try passes); probe runner cap must exceed mcp_call's
-  180s timeout × backoff under tower degradation (c99 run1 stall);
-  **submit 30s governance timeout is two-state — `git ls-remote` the
-  bridge branch before retrying: branch present = false failure (c98,
-  c103), branch absent = true failure, resubmit**.
+  limit=100 (c100 #4793 A/B proof)**; fresh-Write probe discipline (31
+  consecutive first-try passes); **probe invocation must be `python3 -u`
+  with runner cap 480s (c104: a buffered run1 stalled silently and its
+  logs died with the kill)**; submit 30s governance timeout is two-state —
+  `git ls-remote` the bridge branch before retrying (branch present =
+  false failure, c98 + c103; branch absent = true failure, resubmit);
+  **NEW (c107): submit must run under the full 600s tool cap — a 120s cap
+  kills mcp_call mid-backoff as a TRUE failure (no branch after 210s);
+  the 600s retry landed atomically as #4941**.
 
 ## Standing conventions
 
 - Report-only sentry passes, agent-suffixed filenames, zero credential, no
   claim/closure request; UTC windows + code-computed Δ with AHEAD/PAST sign.
-- Worklog r13 replaces r12 (eae9f14a) in place; c101–c103 folded (in-gates
-  shield law settled with a clean before/after experiment), history
-  compressed to provable one-liners per the standing small-worklog
-  instruction.
+- Worklog r14 replaces r13 (9019aa65) in place; c104–c107 folded (watchdog
+  lifecycle settled first-person; billing draw-rate law; the two submit
+  timeout laws), history compressed to provable one-liners per the
+  standing small-worklog instruction.
