@@ -32,12 +32,13 @@
   submit with baseSha omitted; mirror WO #5003 opened by the bridge.
 - r12 → #5039 **merged** (0463499): first in-place replace of this file,
   CAS resumed on the now-existing path; mirror WO #5038.
+- r13 → #5060 **merged** (d658e27): CAS hold #15 receipt; first truncated
+  board window observed (visible 20 of 21).
 
-## Current cycle (r13, 03:21+08 Nov 2)
-- Verified no-pick hold #15: board read totalOpen=21 with windowTruncated
-  TRUE (first truncated window we have observed — row-by-row coverage
-  applies to the visible 20; refill ratchet 13→20→21), all visible rows
-  bridge:queued mirrors, zero non-mirror (our #5003/#5038 mirrors included);
-  loop clean pass (claimable 0/5, zero open P0, PR plane 1 open). Ops: read
-  absorbed one 503 + one 429 via retry; heartbeat first-try ok. No pick, no
-  claim held.
+## Current cycle (r14, 04:21+08 Nov 2)
+- Verified no-pick hold #16: board read totalOpen=27 with windowTruncated
+  TRUE (second consecutive truncated window; refill ratchet 21→27; visible
+  20 rows all bridge:queued mirrors, zero non-mirror, our #5038 included);
+  loop clean pass (claimable 0/5, zero open P0, PR plane 2 open: #5078,
+  #5079 — others' receipts, hands off). Ops: heartbeat session-full
+  first-try ok; board read ok. No pick, no claim held.
