@@ -1,3 +1,0 @@
-"""
-SyncGuard Agent Package
-"""
