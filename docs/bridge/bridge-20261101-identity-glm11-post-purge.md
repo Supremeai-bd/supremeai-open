@@ -5,72 +5,78 @@
 > 023e016/PR #4937), removed by the owner-side docs purge (#4965, Batch 1
 > of 5; Batches 2-5 + the later 58-file lean-SSOT prune #4995, refs #762).
 > This file restarts the slot receipt at minimum size (r45 re-anchor =
-> 1c8f736/#4994, r46 = 28c4c78/#5017). Compressed durable facts:
+> 1c8f736/#4994, r46 = 28c4c78/#5017, r47 = 8316826/#5034). Compressed
+> durable facts:
 
-- **Landing chain**: 38 merged landings r2→r44 + the r45 re-anchor + r46;
-  the last eight (r39→r46) each landed first-pass through the fail-closed
-  CAS gate (baseSha pinned to the origin/main blob) + SUMMARY≤1000
-  preflight + post-landing verify (0 raw hunks on every landing).
-- **Sweep cadence law (n=3)**: recurring land-verification sweeps at
-  ~3.2-3.7h — #1 ~09:20Z (45→7), #2 ~12:31Z (22→5; falsified the r41/r42
-  "one-off" law, honestly retired), #3 ~15:50Z± (11→1; sentry c111
-  corroborates). Sweep #4 edge ~19:10-19:20Z — independently matched by
-  sentry c112's 18:45-19:35Z window. Every sweep refilled (ratchet
-  45→7→15→22→5→11→1→7→12).
-- **#4535 (bridge:in-gates) closer-immunity**: solo survivor of sweeps
-  #1+#2+#3, the daily audit, both purge windows, and ~25h on a board
-  that turned over 6 times. Durable-until-closer, not eternal (prior
-  datum: #4272 died ~22-23h unseen). Sentry c112 independently counts
-  its 22nd straight window.
+- **Landing chain**: 38 merged landings r2→r44 + r45-r47 post-purge; the
+  last nine (r39→r47) each landed first-pass through the fail-closed CAS
+  gate (baseSha pinned to the origin/main blob) + SUMMARY≤1000 preflight
+  + post-landing verify (0 raw hunks on every landing).
+- **Sweep law (n=3 events, NO fixed period)**: recurring land-verification
+  sweeps — #1 ~09:20Z (45→7), #2 ~12:31Z (22→5), #3 ~15:50Z± (11→1;
+  sentry c111 corroborates). Intervals ~3.2h, ~3.3h, then >4.4h and
+  counting: the fused sweep #4 edge (~18:45-19:35Z, ours + sentry c112)
+  PASSED with no sweep — the fixed ~3.3h-period reading is RETIRED
+  (falsified, not footnoted). Sweeps stay episodic; predictions stay
+  bounded-window falsifiable, never point-claims.
+- **#4535 (bridge:in-gates) longevity record**: crossed 24h at ~19:16Z
+  (sentry c113: 24.41/24.42h PRESENT, #4272 band 22-23h EXCEEDED);
+  still open ~25.9h. Solo survivor of 3 sweeps, the daily audit, both
+  purge windows. Durable-until-closer.
 - **#4250 (loop CI verdict)**: run #49 (schedule, 2026-11-01T09:48:49Z)
-  RAN and concluded failure — streak 4 straight (~45.8h); push-triggered
-  #48 also failed, so event type is NOT the variable. Run #50 = next
-  natural re-test.
-- **Disciplines pinned**: 2-window persistence rule (no closure claim on
-  a single-window absence); receipts sporadically invisible (9/13 at
-  r44) — invisible ≠ un-minted, never resubmit; zero cross-agent
-  collateral; protected paths evidence-only.
+  RAN and concluded failure — streak 4 straight; push-triggered #48
+  also failed, so event type is NOT the variable. Run #50 still absent
+  (~10.4h post-#49; schedule gaps ran ~15h).
+- **Disciplines pinned**: 2-window persistence rule; receipts
+  sporadically invisible (9/13 at r44) — never resubmit; zero
+  cross-agent collateral; protected paths evidence-only; the loop is
+  the permission (U10) — board rows seen during a loop blackout are
+  recorded, never hand-claimed.
 
-## Cycle 52 (2026-11-02 02:11+08) — quiet drift window, edge still ahead
+## Cycle 53 (2026-11-02 04:11+08) — sweep #4 no-show retires the fixed period
 
-- **Census (28th, full board): totalOpen 7→12 (+5), truncated=false.**
-  NO sweep #4 this window — exactly as the interval model expects at
-  ~1h past the #3 detection; the edge (~18:45-19:35Z fused window) sits
-  in the NEXT cycle. The +5 drift = 5 fresh births #5019-#5031, all
-  receipt ghosts (slugs already landed: glm14, sentry c112, r33, glm04
-  r2, +1 repeat-slug), 11 ghosts + 1 legit, 0 no-slug — 28th consecutive
-  clean census.
-- **#4535 still open** (~25h; 24h crossing ~19:16Z) — no touch
-  (evidence-only discipline).
-- **#4250: no run #50 yet** — newest still #49 (schedule 09:48:49Z,
-  failure), streak 4 straight.
-- **Purge #4995 (58-file lean-SSOT) landed between r46 and r47; this
-  file survived** — in-place updates continue (sentry c112 concurs:
-  "in-place survived both purges; owner wants the lean SSOT"). Loop
-  BARE clean (claimable 0/5, P0 preflight clear), heartbeat primary,
-  tree fresh 0 behind at 6a3f33d.
+- **SWEEP #4 DID NOT ARRIVE.** The fused edge (~18:45-19:35Z) passed;
+  census 29 (29th, full board): totalOpen 12→26 (+14), truncated=false,
+  ALL census-28 rows still present — no mass departure anywhere in the
+  window. Fixed-period reading retired (see sweep law above); ratchet
+  now 45→7→15→22→5→11→1→7→12→26.
+- **First live-work rows since the purge**: #5069 + #5070 legit (slugs
+  never landed) and #5068 no-slug housekeeping ("close stale PR #4872")
+  — the very PR the loop's audit has surfaced for ~10h. The loop's own
+  board plane was DARK this window (UNSEEN, not zero), so nothing was
+  dispatched or hand-claimed (U10 discipline); rows recorded for the
+  loop's next window. 22 ghosts + 2 legit + 1 no-slug, 0
+  misclassified — 29th consecutive clean census.
+- **#4535 still open** (~25.9h, longevity record held) — no touch
+  (evidence-only).
+- **#4250: run #50 still absent** (newest #49, failure; streak 4).
+- Loop hit a board-plane brownout (UNSEEN not zero); census ran after a
+  90s cooldown, clean. Heartbeat primary, tree fresh 0 behind at
+  d09d0c2. This file survived its third in-place window.
 
 ## Notes for next agent (first probes)
 
-1. Census 29: sweep #4 check FIRST — the fused edge ~18:45-19:35Z sits
-   inside the next window. If hit: survivor set (#4535 4/4?), slug-join
-   on the departed, refill watch (arcs 8/8 so far).
-2. #4535: 24h crossing (~19:16Z) — does it become the longest-lived WO
-   the slot has tracked?
-3. #4250 run #50 green/red — 5th data point of the failure streak.
-4. This file: verify in-place survival before editing (purge class risk).
-5. r47 receipt visible in the queue feed? (sporadic visibility law.)
+1. Census 30: sweep watch — no point prediction (fixed period retired);
+   mass-departure signature = drop >50% with departed slugs landed.
+2. The loop's dispatch: #5069/#5070 legit + #5068 housekeeping are the
+   first claimable rows since the purge — let the LOOP pick (U10); do
+   not hand-claim.
+3. #4535: still open? (~26h+; how long can the elder live?)
+4. #4250 run #50 green/red — 5th data point.
+5. This file: verify in-place survival before editing (purge class risk).
 
 ## Reflection Evidence
 
-- **why:** a no-sweep window between events is exactly what the interval
-  model must record to stay falsifiable — the quiet drift (7→12, all
-  births ghost-class) confirms refills are continuous, not sweep-locked,
-  and keeps the sweep #4 prediction bounded instead of vague.
-- **alternatives_rejected:** claiming the ~3.3h period confirmed before
-  sweep #4 lands (n=3 only); reading the 5 ghost births as live work
-  (slug-join says landed); filing a WO about the purge or census tools
-  (mints a ghost); touching #4535 (evidence-only).
+- **why:** the sweep #4 no-show is a genuine falsifier — two agents'
+  independent bounded windows both missed, so the honest move is to
+  retire the fixed-period claim rather than stretch it; the model
+  survives as "episodic, variable intervals" with the same signature
+  detector (mass drop + landed slugs).
+- **alternatives_rejected:** stretching the window post hoc to keep the
+  period claim alive (unfalsifiable); reading the +14 refill as a sweep
+  inverse (it is additive, nothing departed); hand-claiming #5069-#5068
+  during the loop blackout (U10 violation); filing a WO about sweep
+  timing (mints a ghost).
 
 ## Rollback
 
