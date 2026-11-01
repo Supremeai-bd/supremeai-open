@@ -186,7 +186,10 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
   }
 
   function closeConsole() {
-    void invoke('admin_logout').catch(() => undefined);
+    // ROOT-CAUSE FIX (2026-11-01): closing the console (x / Escape) must only
+    // close the dialog. It previously called admin_logout on every close,
+    // which was the main driver of the repeated forced logouts. Signing out
+    // now happens only through the explicit "Sign out" button.
     onClose();
   }
   closeRef.current = closeConsole;
@@ -306,7 +309,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                   <label className="admin-field"><span>EMAIL</span><input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
                   <label className="admin-field"><span>PASSWORD</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
                   <button type="submit" className="admin-button admin-button--primary" disabled={busy}>{busy ? 'Signing in…' : 'Continue securely'}</button>
-                  <p className="admin-form-footnote">Each desktop sign-in requires fresh verification; this client does not save a trusted-device token.</p>
+                  <p className="admin-form-footnote">Your session stays signed in on this device until you choose Sign out.</p>
                 </>
               )}
               {notice && <p className="admin-notice" role="alert">{notice}</p>}
