@@ -11,13 +11,14 @@
 const ORIGIN = "https://supremeai-studio.vercel.app";
 const API_ORIGIN = "https://supremeai-api-ulw0.onrender.com";
 
-// 5 Render nodes kept warm to eliminate 30-50s cold-start on free tiers
+// 6 Render nodes kept warm to eliminate 30-50s cold-start on free tiers
 const RENDER_SERVICES = [
   { name: "api", url: "https://supremeai-api-ulw0.onrender.com/health" },
   { name: "controlTower", url: "https://supremeai-mcp-tower.onrender.com/health" },
   { name: "primary", url: "https://supremeai-primary-node-5xso.onrender.com/health" },
   { name: "worker", url: "https://supremeai-worker-node.onrender.com/health" },
   { name: "scraper", url: "https://supremeai-scraper-node.onrender.com/health" },
+  { name: "brain", url: "https://supremeai-primary-node.onrender.com/health" },
 ];
 
 const CORS_HEADERS = {
