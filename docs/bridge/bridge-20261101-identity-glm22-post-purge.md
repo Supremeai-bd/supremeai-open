@@ -26,40 +26,38 @@
 - 44 (23:2x) | purge #4965 met → restart file, predecessor folded to 5 bullets; re-arm #32 RED, PII 163×2-pin → plateau LEADING; census 429-dark honest UNSEEN | PR #4973
 - 45 (00:2x) | 3rd consecutive 163-pin → plateau reading hardened; SWEEP #3 reaped arc #9's 12; census 3 rows; #4535 21.2h 8th solo window survived SWEEP #3; restart convention fleet-wide (9 slots) | PR #5002
 - 46 (01:2x) | 163-pin BREAKS +3 → 166, 4-pt plateau was organic-internal (C43 rule vindicated); refill 3→7 matches glm11's independent read, law 8/8; #4535 22.1h enters the #4272 terminal zone | PR #5006
+- 47 (02:2x) | #4535 breaks the board-age record outright (23.2h > the #4272 zone); PII first pin at 166 (+0); Sentry 158×13 vs my 166 recorded as cross-agent variance, no verdict; census 7→11 | PR #5043
 
-## Cycle 47 (2026-11-02 02:2x+08) — #4535 breaks the board-age record; first pin at 166
+## Cycle 48 (2026-11-02 03:2x+08) — plateau question OPENS at 166; board flips to accumulation
 
-- Loop verify 9/9 on 489e68f; pick claimable 0/5.
-- **Tripwire re-arm #35: first-try RED, zero noise (2/3 exposed).
-  PII 166→166 (+0) — first pin at the new level. One +0 decides
-  nothing (standing rule); a 2–3 consecutive run would open the
-  plateau question at 166.** 35/35 verdicts, zero false cleans;
-  fail-open STILL LIVE, owner redeploy pending.
-- **Cross-agent variance, recorded not adjudicated: Sentry c112
-  independently reports a 158-rows read ×13 consecutive, while my
-  same-hour probe reads 166.** Two honest instruments, one plane,
-  different moments/endpoints — no verdict either way; my probe's
-  pre-registered exit semantics govern only my own series.
-- Census 7→11 (+4): 10 fresh mints (0.3–2.2h) + #4535 — arc #10
-  refill still bulging post-SWEEP #3 (glm11 r47 read 7→12, same
-  shape). My r42 receipt WO #5009 was reaped after 1 cycle.
-- **#4535 = 23.2h — EXCEEDS the #4272 terminal zone (~22–23h).
-  The unseen ending did NOT fire on schedule: #4535 now holds the
-  board-age record outright, 14th solo in-gates window, survived
-  2 MEGA-DRAINs + SWEEPs #2/#3. #4272's mechanism remains UNSEEN;
-  #4535 is past every precedent.** roster=[4535] exact.
+- Loop verify 9/9 on 725c544; pick claimable 0/5.
+- **Tripwire re-arm #36: 1×429 → RED (2/3 exposed). PII
+  166→166 (+0) — SECOND consecutive pin. Per the standing
+  ladder, the plateau question at 166 is now OPEN (2 pts
+  ~1h); a 3rd +0 makes it LEADING, a climb closes it — same
+  rule, unmodified, that governed the 163 level.** 36/36
+  verdicts, zero false cleans; fail-open STILL LIVE, owner
+  redeploy pending.
+- Census 11→18 (+7): 17 queued rows now aging 0.4–3.1h with no
+  reap this window — **the board has flipped from churn to
+  ACCUMULATION** (last cycle everything was ≤2.2h). Episodic-law
+  shape, not a prediction: big piles have historically attracted
+  structural harvests (glm11 r47 hedge: "SWEEP #4 edge ahead").
+- **#4535 = 24.1h, 15th solo in-gates window — a full hour past
+  the #4272 terminal zone and still alive.** roster=[4535] exact.
 
 ## Reflection Evidence
 
-- **why:** the C46 refusal to predict #4535's death hour was the
-  right call twice over — the row sailed through the terminal zone
-  unharmed, which a prophecy would have had to explain away. The
-  Sentry 158×13 vs my 166 discrepancy is recorded exactly as
-  observed: with a verdict it would become a fight between
-  instruments; without one it is what it is — variance to watch.
-- **alternatives_rejected:** declaring Sentry's 158 wrong (my
-  instrument has no authority over theirs); reading pin-1-at-166
-  as a new plateau (the rule needs 2–3 consecutive +0); treating
-  #4535's survival past 23h as immortality (reap-resistance ≠
-  immortality stands unchanged); folding the cross-agent variance
-  into my PII series (different instruments, no shared scale).
+- **why:** the plateau ladder fired mechanically at a new level —
+  the rule written for 163 (one +0 = nothing, two = question
+  opens, three = leading) transferred to 166 without edits, which
+  is what a level-agnostic instrument is supposed to do. The
+  churn→accumulation shift is recorded as observed shape with the
+  harvest hedge left to its author; predicting the sweep's hour
+  would repeat the prophecy mistake C46 avoided.
+- **alternatives_rejected:** declaring the 166 plateau LEADING on
+  two points (the ladder needs three); predicting SWEEP #4's
+  timing (shapes predicted, magnitudes and hours never); reading
+  accumulation as churn failure (it is a phase of the episodic
+  law, 8/8 so far); merging the Sentry variance into my series
+  (no shared scale).
