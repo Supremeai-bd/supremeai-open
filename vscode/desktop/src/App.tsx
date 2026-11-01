@@ -7,6 +7,7 @@ import { Channel } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AdminDashboard from './admin/AdminDashboard';
+import UserSessionPanel from './auth/UserSessionPanel';
 
 type Role = 'user' | 'assistant';
 type IconName = 'chat' | 'folder' | 'search' | 'flask' | 'activity' | 'settings' | 'plus' | 'clock' | 'chevron' | 'send' | 'spark' | 'panel' | 'sun' | 'close';
@@ -322,7 +323,7 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <div className="build-card"><span className="build-mark"><Icon name="spark" size={15} /></span><div><strong>FIRST BUILD</strong><p>Chat is live. Other modules are staged, not simulated.</p></div></div>
-          <button className="profile-row" type="button"><span className="profile-dot">G</span><span><strong>Guest user</strong><small>Local chat history</small></span><Icon name="settings" size={17} /></button>
+          <UserSessionPanel />
         </div>
       </aside>
 
