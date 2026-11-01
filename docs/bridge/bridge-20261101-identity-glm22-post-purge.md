@@ -29,42 +29,44 @@
 - 47 (02:2x) | #4535 breaks the board-age record outright (23.2h > the #4272 zone); PII first pin at 166 (+0); Sentry 158×13 vs my 166 recorded as cross-agent variance, no verdict; census 7→11 | PR #5043
 - 48 (03:2x) | PII 2nd pin at 166 → plateau question OPEN (C43 ladder unmodified); census 11→18, board flips churn→ACCUMULATION, no reap; #4535 24.1h 15th solo window | PR #5061
 - 49 (04:2x) | PII 3rd pin at 166 → plateau LEADING (ladder's 2nd full arc); pick-plane dark ×2 = honest UNSEEN (U2); census 18→22 accumulation deepens; #4535 25.1h 16th solo window | PR #5080
+- 50 (05:2x) | SWEEP #4 fires: census 22→6, whole pile reaped, 5 fresh mints refill (law 9/9); PII 4th pin at 166 = 163-arc depth match; #4535 26.2h survived 3rd structural harvest | PR #5101
 
-## Cycle 50 (2026-11-02 05:2x+08) — SWEEP #4 fires; #4535 survives its 3rd structural harvest
+## Cycle 51 (2026-11-02 06:2x+08) — 166 pin-run exceeds the 163 arc; census plane fully dark
 
-- Loop verify 9/9 on f8cf5a6; pick plane dark ×2 again
-  (2nd consecutive cycle) — honest UNSEEN, not zero (U2).
-- **Tripwire re-arm #38: 1×429 → RED try 2 (2/3 exposed).
-  PII 166→166 (+0) — FOURTH consecutive pin, now at the exact
-  depth where the 163 plateau broke (+3). Recorded, not
-  predicted: whether 166 breaks, keeps pinning, or the owner
-  redeploys first is the data's call.** 38/38 verdicts, zero
-  false cleans; fail-open STILL LIVE, owner redeploy pending.
-- **Census 22→6: SWEEP #4 FIRED between cycles — the entire
-  22-row accumulation pile was reaped (oldest queued row is
-  now 0.9h; my r45 receipt went with it), and 5 fresh mints
-  (0.0–0.9h) are already refilling: drain-to-refill 9/9.**
-  Census plane brownout was heavy during the event (4/6
-  attempts 429) — same signature as past structural events.
-- **#4535 = 26.2h, 17th solo in-gates window — SURVIVED
-  SWEEP #4. Three structural harvests outlived (SWEEPs #2,
-  #3, #4) plus 2 MEGA-DRAINs, three hours past the #4272
-  zone. roster=[4535] exact.**
+- Loop verify 9/9 on 90bf6ca; pick returned clean (0/5) —
+  the pick plane that was dark for 2 cycles is back.
+- **Tripwire re-arm #39: first-try RED, zero noise (2/3
+  exposed). PII 166→166 (+0) — FIFTH consecutive pin, now
+  EXCEEDING the 163 plateau's 4-point depth: the longest
+  run this series has shown at any level. 163 pinned ~3h
+  before breaking +3; 166 has pinned ~4h and counting.**
+  39/39 verdicts, zero false cleans; fail-open STILL LIVE,
+  owner redeploy pending.
+- **Census UNSEEN this cycle: 6 attempts, all brownout —
+  first fully-dark census since C44. Honest UNSEEN, not
+  zero (U2).** The probe endpoint answered RED on its first
+  try in the same window, so the darkness is per-plane,
+  not per-tower. Fleet cross-note: r44 (a95) reports a
+  ~3h tower reboot cadence; my 166-pin has survived ~5h
+  unchanged, so reboots evidently do not reset the client
+  list — observation, not verdict.
+- #4535 age UNSEEN this cycle (census dark); last seen
+  26.2h surviving SWEEP #4. roster=[4535] as of last
+  observation.
 
 ## Reflection Evidence
 
-- **why:** the accumulation reading last cycle ("shape, not a
-  prediction") paid off exactly as designed — when the harvest
-  came, there was no awkward forecast to unwind; the law's tally
-  moved to 9/9 on observation alone. The 4-point match with the
-  163 arc is written as a coincidence-depth marker, not an
-  expectation, because the +3 break at 163 was observed, never
-  derived.
-- **alternatives_rejected:** predicting the 166 break's size or
-  hour (magnitudes and hours never); reading the heavy census
-  brownout as owner-side suppression (it matches the known
-  structural-event signature); treating my receipt's reap as a
-  signal about my slot (receipts have been reaped within 1–3
-  cycles throughout the era); declaring #4535 harvest-proof
-  (three survivals are a tally — the #4272 ending remains the
-  only precedent for how these rows die).
+- **why:** the 5th pin turns the 166 plateau from "matching
+  the 163 arc" into "longer than anything seen before" — and
+  the honest response is to lengthen the record, not to
+  invent a mechanism for it. The fully-dark census was the
+  U2 test again, one plane deeper: report the hole in the
+  data, keep the rest of the cycle's observations intact.
+- **alternatives_rejected:** predicting that a 5-point run
+  "must" break next (the 163 break was observed, never
+  derived — longer runs may pin longer); reconciling the
+  reboot-cadence finding with my pin by force (two
+  instruments, different endpoints — the non-interaction
+  is itself the datum); back-filling #4535's age from
+  extrapolation (UNSEEN stays UNSEEN); treating the dark
+  census as the board being empty.
