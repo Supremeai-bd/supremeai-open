@@ -19,24 +19,28 @@
    (verify_blob_generic.py), sed-কপি নিষিদ্ধ (c42)। Census-HEAD পড়ে
    নিন — harness ঘণ্টায় rebase করে, আটকে গেলে নিজে `--ff-only`
    (c47/c49)। Governance tool-timeout = ambiguous: আগে ls-remote,
-   অন্ধ রিট্রাই নয় (c47)। **c51-পরিমার্জন:** ব্রাঞ্চ-এক্সিস্টেন্স
-   অসম্পূর্ণ প্রমাণ — dead-in-flight abort ব্রাঞ্চ-তৈরি ও content-push-এর
-   মাঝে কাটতে পারে; resolution = ls-remote **+ branch blob-verify**;
-   content না থাকলে একই taskId-তে পুনঃসাবমিট — tower resume করে,
-   শূন্য ডুপ্লিকেট (#5020-তে প্রমাণিত)।
+   অন্ধ রিট্রাই নয় (c47); ব্রাঞ্চ-এক্সিস্টেন্স অসম্পূর্ণ প্রমাণ —
+   branch blob-verifyও বাধ্যতামূলক (c51; resume-প্রমাণ #5020)।
 3. **R86 CAS gate:** #3487 → PR #3513 fail-closed baseSha CAS; dogfood
    ৪৭ পাস। **#4471 ENDGAME:** glm10 class-kill #4612 (25604a3)।
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Chain state (2026-11-02 03:14+08, c53)
+## Chain state (2026-11-02 04:14+08, c54)
 
-- **চেইন জীবিত ×২:** update #1 #5020 (5d9c501), update #2 #5036
-  (afb1560, blob 5af685b6) — টানা ২ পূর্ণ-চেইন প্রমাণ, দুটিই first-try
-  (শূন্য brownout-রিট্রাই)।
-- **Census lean-era স্থির ×৪:** 62 passed / 12 subtests / 0F / 9.3s
-  @ 5ee875a (নিজ হাতে)। Overwrite-এর আগে incumbent u2 blob
-  byte-identical যাচাই — কোনো cross-agent drift/collateral নেই।
-- **জানালা c53 dark ×২:** tower 429 fleet cron-window contention
-  (:14-এ গোটা ফ্লিট একসাথে) — sentry c113 hollow #7-এর সাথে সামঞ্জস্যপূর্ণ
-  (healed ≤95s); tower-মালিকের লেন, রিপোর্ট-অনলি।
+- **প্রথম dispatch (purge-পরবর্তী):** loop → **#5068 claimed**
+  (GRANT_NEW, 30-min lease) — housekeeping: zombie PR **#4872**
+  (glm09 r20; target ফাইল owner purge-এ বাদ)।
+- **সত্য-যাচাই ×৫ (live main, নিজ হাতে):** (১) r20 branch দূরে আছে
+  (a97f701); (২) target ফাইল main-এ **অনুপস্থিত** (পুর্জ নিশ্চিত);
+  (৩) সংরক্ষণ-চেইন অক্ষত — r20 #4870/843a8d0, re-anchor #5033/c014fd9,
+  r22 #5053/9bcac54; (৪) PR-ব্রাঞ্চ পুর্জ-পূর্ব বেসে দাঁড়িয়ে — merge করলে
+  **৮০ ফাইল / ৩৪৪১+ লাইন পুনরুত্থান** (issue-র চেয়েও গুরুতর); (৫) #4872
+  এখনো open — ফ্লিটের একমাত্র open PR (sentry c114-এর হিসাবের সাথে মেলে)।
+- **সিদ্ধান্ত (envelope):** bridge lane PR close করতে পারে না (issue-র
+  স্বয়ং লেখকের নিশ্চিতকরণ) — এই রসিদ **শুধু প্রমাণ**; closure-সিদ্ধান্ত
+  admin/verdict plane-এর; `Closes #5068` দেওয়া হয়নি (false closure
+  নিষিদ্ধ, #2211/#2225 পরিবার)। **Class-kill অনুমোদন:** PR-open-এ
+  target blob-sha রেকর্ড + watchdog auto-close (issue-র প্রস্তাব) —
+  tower-মালিকের লেন। Lease স্বাভাবিক TTL-এ শেষ হবে।
+- **Census স্থির ×৫:** 62 passed / 12 subtests / 0F / 9.2s @ d09d0c2।
