@@ -270,6 +270,21 @@ class TestFederationSatelliteSync(unittest.TestCase):
             self.assertTrue(ok)
 
 
+    def test_direct_open_to_monorepo_push_forbidden(self):
+        """Negative boundary test (Federation Audit Item 5):
+        Ensures supremeai-open does not contain active direct push or full-tree clone/copy
+        logic into private umbrella Supremeai-bd/supremeai.
+        """
+        sync_script_path = sync_mod.Path(__file__).resolve().parent.parent / "scripts" / "ci" / "federation_satellite_sync.py"
+        content = sync_script_path.read_text(encoding="utf-8")
+        
+        # Must not contain active sync(open->monorepo) commit message
+        self.assertNotIn("sync(open->monorepo)", content, "Direct open->monorepo commit pattern forbidden in sync script.")
+        
+        # sync_monorepo must be decoupled/stubbed
+        self.assertTrue(sync_mod.sync_monorepo(sync_mod.Path("."), "dummy_token", "msg"))
+
+
 if __name__ == "__main__":
     unittest.main()
 
