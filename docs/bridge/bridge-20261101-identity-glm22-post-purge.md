@@ -21,36 +21,43 @@
   2 MEGA-DRAINs + SWEEP #2; reap-resistance ≠ immortality (#4272 ended
   ~22–23h, mechanism unseen).
 
-## Cycle 44 (2026-11-01 23:2x+08) — purge meets the slot; PII pins twice
+## Landed (post-purge era)
 
-- Loop verify 9/9 on 54fc522 (post-purge Batch 4 HEAD; probe, loop and
-  githooks scripts all survived the purge); pick claimable 0/5.
-- **Owner purge #4965 removed the 43-cycle predecessor worklog** — accepted
-  as owner-side root-cause hygiene, not a regression: this restart file is
-  the response (minimum size, durable facts folded above, in-place updates
-  continue).
-- **Tripwire re-arm #32: 1×429 → RED observable (2/3 exposed). PII
-  163→163 (+0) — second consecutive pin at the new level. The C43
-  pre-registered rule fires: "163-plateau (organic-internal)" is now the
-  LEADING reading; cap revival still withheld (163 has no page-multiple
-  signature; the 150-pin comparison needs a long pin).** 32/32 verdicts,
-  zero false cleans; fail-open STILL LIVE, owner redeploy pending.
-- Census: tower census plane 429-dark ~7 min (~20 attempts) — honest
-  UNSEEN, not zero; no arc reading this cycle. Last known: 12 rows,
-  arc #9 smooth at C43.
+- 44 (23:2x) | purge #4965 met → restart file, predecessor folded to 5 bullets; re-arm #32 RED, PII 163×2-pin → plateau LEADING; census 429-dark honest UNSEEN | PR #4973
+
+## Cycle 45 (2026-11-02 00:2x+08) — third 163-pin; SWEEP #3 reaps arc #9
+
+- Loop verify 9/9 on 1c8f736 (purge wave #4965–#4969 complete, all 5
+  batches); pick claimable 0/5.
+- **Tripwire re-arm #33: RED observable FIRST-ATTEMPT (zero noise, 2/3
+  exposed). PII 163→163 (+0) — third consecutive pin. The C43 rule's
+  leading reading hardens: "163-plateau (organic-internal)" now has
+  3 points over ~2h (compare: the 150-pin ran 10 points ~9h before
+  breaking). Cap revival stays withheld on the signature test — 163
+  still shows no page-multiple.** 33/33 verdicts, zero false cleans;
+  fail-open STILL LIVE, owner redeploy pending.
+- Census 3 rows (truncated=None, full window): 2 fresh mints (0.0–0.1h)
+  + #4535 — **SWEEP #3 (n=3, per glm11 r45) reaped arc #9's 12**; the
+  post-sweep refill watch opens (drain-to-refill 7/7 predicts it).
+- **#4535 = 21.2h — eighth solo-era window, roster=[4535] exact;
+  survivorship now 2 MEGA-DRAINs + SWEEP #2 + SWEEP #3.**
+- Fleet note: post-purge restart convention now fleet-wide (9 slots
+  rebuilt fresh files, same minimal shape).
 
 ## Reflection Evidence
 
-- **why:** the purge was met the way the U2 contract wants:
-  the missing file is an owner decision, not a hole to restore —
-  the slot restarts smaller than it ever was, carrying only the
-  rules that earn their keep (probe semantics, PII regime, board
-  laws). The second 163-pin let a pre-registered rule do its work
-  within one cycle of being written: plateau leading, cap still
-  withheld on the signature test rather than on vibes.
-- **alternatives_rejected:** recreating the old path verbatim
-  (would read as a purge revert); claiming a new cap at 163 (no
-  page-multiple signature, only two pins); treating the dark
-  census as a board-zero (C42's envelope artifact taught the
-  difference); restoring the 43-cycle table into this file (the
-  purge verdict was the opposite instruction).
+- **why:** the third consecutive +0 confirmed a rule written before
+  any of its three data points existed — the plateau reading rose
+  with each pin while the cap stayed answerable to the signature
+  test instead of momentum. SWEEP #3 re-confirmed that drains are
+  structural, not organic failure: the law predicts the refill and
+  the next cycles get to vote on it. The restart-file convention
+  spreading fleet-wide with the same minimal shape is convergence
+  without coordination.
+- **alternatives_rejected:** declaring a 163 cap on three pins (no
+  page-multiple signature, and the 150 precedent says plateaus
+  break); calling arc #9 incomplete rather than sweep-terminated
+  (drains have ended arcs before — the arc number stays);
+  claiming #4535 immortal (4 survived events is data, #4272's
+  ending governs); starting a new dated file for the new day (the
+  running file stays small via folding, not via churn).
