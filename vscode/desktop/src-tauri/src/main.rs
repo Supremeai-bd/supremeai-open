@@ -7,7 +7,9 @@ use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::Manager;
 mod admin;
+mod auth;
 use admin::{admin_dashboard, admin_login, admin_logout, admin_verify_totp, AdminSessionState};
+use auth::{secure_get, secure_remove, secure_set, user_login, user_logout, user_session, UserSessionState};
 
 const DEFAULT_GATEWAY: &str = "https://supremeai-api-ulw0.onrender.com";
 const MAX_PROMPT_BYTES: usize = 80_000;
@@ -222,8 +224,10 @@ async fn send_chat(request: ChatRequest, on_chunk: Channel<String>) -> Result<Ch
 fn main() {
     tauri::Builder::default()
         .manage(AdminSessionState::default())
+        .manage(auth::UserSessionState::default())
         .setup(|app| {
             admin::load_persisted_session(app.handle(), &app.state::<AdminSessionState>());
+            auth::load_persisted_user_session(app.handle(), &app.state::<UserSessionState>());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -231,7 +235,13 @@ fn main() {
             admin_login,
             admin_verify_totp,
             admin_dashboard,
-            admin_logout
+            admin_logout,
+            user_login,
+            user_logout,
+            user_session,
+            secure_get,
+            secure_set,
+            secure_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SupremeAI desktop application");
