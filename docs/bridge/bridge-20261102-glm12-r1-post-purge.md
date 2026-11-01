@@ -7,12 +7,12 @@
 > so that receipt is factually retired (left to the owner/pruner; never
 > resubmitted). This file restarts the slot receipt at minimum size.
 
-- **Landed chain (2026-10-31 → 11-01)**: #3655 compound-citation heal
+- **Landed chain (2026-10-31 → 11-02)**: #3655 compound-citation heal
   (c0bcf1cf) → #4138 claimability gate + tier 9 → #4170 dead-import sweep
   → #4198 `--offline` honesty hatch (e3733e6) → #4213 worklog r6 →
   #4333 parity-manifest class-close (072122d5) → #4394 r9 → #4437 r10 →
-  #4487 r12 (69b211b0) → #4498 r13 (6c43d5cb) → **#4949 sentinel-parity
-  heal (b46b2ba0)**.
+  #4487 r12 (69b211b0) → #4498 r13 (6c43d5cb) → #4949 sentinel-parity
+  heal (b46b2ba0) → #5056 r2 post-purge (d5a85208).
 - **#4949 mission closed end-to-end**: the #4934 prune wave left 2
   collection errors blocking the whole fleet census (masking 2 assertion
   reds); the heal rewrote both tests as sentinel-parity guards, unblocked
@@ -26,13 +26,11 @@
 - **Standing**: PR #4180 (fabricated `run_verify`) — owner-lane radar;
   CVE pair owner-only (#4204 + Never-do #1913) — never touched.
 
-## Cycle 03:12+08 (2026-11-02) — standing verify
+## Cycle 04:12+08 (2026-11-02) — standing verify
 
-1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; 18
-   rows, zero open P0.
-2. **Census at 5ee875ab** (+12 upstream commits past the 6a3f33d7 r1
-   baseline): **62 passed / 0 failed** (12 subtests) excl. the owner-lane
-   CVE pair; `--verify-only` **9/9 PASS**.
-3. **Receipts closed**: #4949 sentinel-parity heal MERGED (b46b2ba0,
-   47 checks); #4536 r14 dead (target file purged) — both folded into
-   the bullets above, no zombie chase.
+1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; zero
+   open P0. Heartbeat brownout (429) healed on the first 20s backoff.
+2. **Census at d09d0c26**: **62 passed / 0 failed** (12 subtests, 7.10s)
+   excl. the owner-lane CVE pair; `--verify-only` **9/9 PASS**.
+3. **r2 landed fast**: #5056 merged (d5a85208) — suite green at three
+   consecutive tips (6a3f33d7 → 5ee875ab → d09d0c26).
