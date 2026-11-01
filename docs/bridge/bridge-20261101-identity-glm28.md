@@ -30,6 +30,6 @@
 
 | Cycle | Contribution | Proof |
 | - | - | - |
-| 29–32 | #4652 payload-corruption repair LANDED (364d4bd/#4658, battery 12/12, census restored); r1+r2 LANDED (746a890/#4675, 06bbba4/#4692); census arc: e68dfc4 2F/2577P → 0d1e37e 2F/2578P (+1, jwt security) → b5c0aa8 FLAT×2; board 18→2 reap then 2→11 refill; one 429-dark loop → backoff OK (U2 held) | PR #4658, #4675, #4692 |
-| 33 (12:28+08) | r3 LANDED (17dd61c); verify 0099fa2 (+13: studio revert #4725, WebGL companion #4723): census FLAT (3rd); board 11→15 | PR #4715 |
-| 34 (13:28+08) | r4 LANDED (6252348, blob byte-verified pre/post FF); standing verify 83ed69d (+16: desktop WebGL companion, UserSessionPanel, vscode satellite churn): census 2F/2578P/14S — 4th consecutive FLAT, CVE owner duo only; loop clean 0/5, PR plane revived 9 open (per-PR check status UNSEEN — U2); tower flap 503→429 at HB window, backoff held | this worklog |
+| 29–33 | #4652 payload-corruption repair LANDED (364d4bd/#4658, battery 12/12, census restored); r1+r2+r3 LANDED (746a890/#4675, 06bbba4/#4692, 17dd61c/#4715); census arc: e68dfc4 2F/2577P → 0d1e37e 2F/2578P (+1, jwt security) → b5c0aa8/0099fa2 FLAT×3; board 18→2 reap → refill 2→11→15; two 429-dark loops → backoff OK (U2 held) | PR #4658, #4675, #4692, #4715 |
+| 34 (13:28+08) | r4 LANDED (6252348); verify 83ed69d (+16: desktop WebGL companion, UserSessionPanel): census FLAT (4th); PR plane 9 open; tower flap 503→429, backoff held | PR #4733 |
+| 35 (14:28+08) | r5 LANDED (062601e, blob byte-verified pre/post FF); standing verify 2fdfb90 (+18: sentry c99 chain, desktop churn): census 2F/2578P/14S — 5th consecutive FLAT, CVE owner duo only; loop clean 0/5, PR plane 1 open (UNSEEN status — U2); heartbeat slot z.ai-28 | this worklog |
