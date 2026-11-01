@@ -68,6 +68,14 @@ def _script_index_freshness() -> list[str]:
     adds/renames/deletes a script without regenerating the index fails Step 1.
     Only invoked in full-repo mode (targets=None); the offline self-test path
     passes explicit targets and stays deterministic/fast.
+
+    #4471 second layer (--check-committed): the workspace file can be mutated
+    before this gate runs — pipeline.yml's regen-first step regenerates the
+    runner copy, so a workspace read always sees a fresh index and a PR
+    carrying a stale committed index passes (the #3418 ordering regression
+    family). The committed-blob check reads git HEAD instead — in CI HEAD is
+    exactly the tree under test — and fails closed when the committed index
+    is stale, killing the ordering class regardless of workflow ordering.
     """
     errors: list[str] = []
     gen = REPO_ROOT / "scripts" / "ops" / "generate_script_index.py"
@@ -92,6 +100,24 @@ def _script_index_freshness() -> list[str]:
                 errors.append(f"  index: {line}")
     except subprocess.TimeoutExpired:
         errors.append("scripts/ops/generate_script_index.py --check timed out (60s)")
+    # #4471 layer 2: committed-blob check — immune to regen-first CI mutation.
+    try:
+        result = subprocess.run(
+            [sys.executable, str(gen), "--check-committed"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            errors.append(
+                "scripts/ops/_INDEX.md at HEAD is STALE (committed-blob check, "
+                "immune to regen-first CI mutation) — regenerate AND commit the index"
+            )
+            for line in (result.stdout + result.stderr).strip().splitlines()[:3]:
+                errors.append(f"  index@HEAD: {line}")
+    except subprocess.TimeoutExpired:
+        errors.append("scripts/ops/generate_script_index.py --check-committed timed out (60s)")
     return errors
 
 

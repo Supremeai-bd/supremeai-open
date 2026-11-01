@@ -13,7 +13,7 @@
 
 ## ⚡ Key Capabilities
 
-- **Live Federation Command Dashboard:** Real-time telemetry monitoring active execution slots, token burn rate, and health metrics across all 12 federation repositories.
+- **Live Federation Command Dashboard:** Real-time telemetry monitoring active execution slots, token burn rate, and health metrics across connected federation repositories.
 - **Dual Transport Telemetry Stream:** Seamless connection to the live SupremeAI MCP Tower over Server-Sent Events (`/sse`) and WebSockets with auto-reconnect and offline failover simulation.
 - **Dark & Light Glassmorphism UI:** Precision token-driven design system with frosted glass surfaces, accessible color contrast (≥ 4.5:1), and fluid typography.
 - **Zero Third-Party Tracking:** 100% self-contained frontend with zero invasive external scripts and fail-closed schema validation.
