@@ -120,56 +120,6 @@
       "open": "api-schemas/websocket-events.schema.json",
       "satellite": "Supremeai-bd/supremeai-api",
       "path": "contracts/schemas/websocket-events.schema.json"
-    },
-    {
-      "open": "tests/test_tiny_brain_service.py",
-      "satellite": "Supremeai-bd/supremeai-core",
-      "path": "tests/test_tiny_brain_service.py"
-    },
-    {
-      "open": "tests/test_core_exports.py",
-      "satellite": "Supremeai-bd/supremeai-core",
-      "path": "tests/test_core_exports.py"
-    },
-    {
-      "open": "tests/test_brain_curriculum.py",
-      "satellite": "Supremeai-bd/supremeai-core",
-      "path": "tests/test_brain_curriculum.py"
-    },
-    {
-      "open": "tests/test_kaggle_orchestrator_dual_brain.py",
-      "satellite": "Supremeai-bd/supremeai-core",
-      "path": "tests/test_kaggle_orchestrator_dual_brain.py"
-    },
-    {
-      "open": "tests/test_gateway_foundation.py",
-      "satellite": "Supremeai-bd/supremeai-api",
-      "path": "tests/test_gateway_foundation.py"
-    },
-    {
-      "open": "tests/test_gateway_shield.py",
-      "satellite": "Supremeai-bd/supremeai-api",
-      "path": "tests/test_gateway_shield.py"
-    },
-    {
-      "open": "tests/test_mcp_access_policy_guard.py",
-      "satellite": "Supremeai-bd/supremeai-api",
-      "path": "tests/test_mcp_access_policy_guard.py"
-    },
-    {
-      "open": "tests/test_openapi_breaking_guard.py",
-      "satellite": "Supremeai-bd/supremeai-api",
-      "path": "tests/test_openapi_breaking_guard.py"
-    },
-    {
-      "open": "tests/test_browser_foundation.py",
-      "satellite": "Supremeai-bd/supremeai-browser",
-      "path": "tests/test_browser_foundation.py"
-    },
-    {
-      "open": "tests/test_browser_injection_canary.py",
-      "satellite": "Supremeai-bd/supremeai-browser",
-      "path": "tests/test_browser_injection_canary.py"
     }
   ]
 }
