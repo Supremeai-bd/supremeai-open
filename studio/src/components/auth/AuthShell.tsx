@@ -28,9 +28,9 @@ export const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children })
             </span>
             <Link
               to="/"
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:border-cyan-500/30 hover:text-white transition-colors"
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:border-cyan-500/30 hover:text-white transition-colors"
             >
-              Public Suite →
+              <span>← Back to Home</span>
             </Link>
           </div>
         </header>

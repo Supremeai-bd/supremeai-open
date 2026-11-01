@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -369,6 +370,36 @@ def warn_stale_hand_refs(hand_blocks: List[Tuple[str, str]], target: Path) -> Li
 # CLI
 # --------------------------------------------------------------------------- #
 
+def _index_matches(current: str, content: str) -> bool:
+    """Compare modulo the generation timestamp (shared by --check/--check-committed)."""
+    return TIMESTAMP_RE.sub("> Last generated: <TS> ·", current) == TIMESTAMP_RE.sub("> Last generated: <TS> ·", content)
+
+
+def _load_committed_index() -> Optional[str]:
+    """#4471: HEAD blob of scripts/ops/_INDEX.md, or None when unverifiable.
+
+    Reads the committed blob instead of the workspace file so the comparison
+    is immune to workspace mutations (e.g. a regen-first CI step that
+    self-heals the runner copy before any gate reads it). None means the
+    committed basis does not exist here (no HEAD, foreign mirror, git
+    unavailable) — the caller then skips; the workspace --check layer
+    still covers that context.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "show", "HEAD:./scripts/ops/_INDEX.md"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Auto-generate scripts/ops/_INDEX.md from the live scripts/ inventory "
@@ -379,6 +410,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help=f"output path (default: {DEFAULT_OUTPUT})")
     parser.add_argument("--check", action="store_true",
                         help="do not write; exit 1 if the output file is out of date (CI gate)")
+    parser.add_argument("--check-committed", action="store_true",
+                        help="do not write; exit 1 if the COMMITTED index at git HEAD is "
+                             "out of date (#4471: immune to workspace mutations such as a "
+                             "regen-first CI step); skips when no committed basis exists")
     args = parser.parse_args(argv)
     target = Path(args.output).resolve()
 
@@ -398,12 +433,27 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"STALE: {target} does not exist. Run: python3 scripts/ops/generate_script_index.py")
             return 1
         # the generation timestamp obviously differs between runs — compare modulo it
-        if TIMESTAMP_RE.sub("> Last generated: <TS> ·", current) == TIMESTAMP_RE.sub("> Last generated: <TS> ·", content):
+        if _index_matches(current, content):
             print(f"OK: {target} is up to date ({len(entries)} scripts, {len(hand_blocks)} hand sections).")
             return 0
         print(f"STALE: {target} differs from the regenerated index "
               f"({len(entries)} live scripts found). "
               f"Run: python3 scripts/ops/generate_script_index.py")
+        return 1
+
+    if args.check_committed:
+        committed = _load_committed_index()
+        if committed is None:
+            print("SKIP: no committed scripts/ops/_INDEX.md at HEAD (fresh/foreign checkout) — "
+                  "the workspace --check layer remains active.")
+            return 0
+        if _index_matches(committed, content):
+            print(f"OK: committed scripts/ops/_INDEX.md matches the regenerated index "
+                  f"({len(entries)} scripts, {len(hand_blocks)} hand sections).")
+            return 0
+        print(f"STALE: committed scripts/ops/_INDEX.md at HEAD differs from the regenerated "
+              f"index ({len(entries)} live scripts found). "
+              f"Run: python3 scripts/ops/generate_script_index.py && git add scripts/ops/_INDEX.md")
         return 1
 
     target.write_text(content, encoding="utf-8")

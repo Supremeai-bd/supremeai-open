@@ -21,19 +21,26 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c33 (22:16–03:16, compressed): INDEX-REGRESSION datum (fourth-tip
-  4F; git log -S pinned the stale index line to #4450; gate correct) →
-  fix converged in-cycle via #4463, my index half withdrawn after CAS
-  rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
-  codified (timeout = pipeline entry, not failure: r15→#4414,
-  r18→#4513 both landed unretried; c31 CAS block proved the other
-  branch) → r17 landed (#4499, 771ecc0), r18 (#4513, 944af90), r19
-  (#4541, ab3a50c). Floor held five tips.
-- c34 (04:16): SEVENTH-TIP FLOOR: suite at dd1960a = 2F/2385P/13S,
-  CVE pair only. Loop clean: board 10 open rows, zero P0, the only
-  claimable (#4471) still U5-demotion-held (#4533/#4528 coverage in
-  flight, remedy in admin lane); no dispatch. Board zero of mine —
-  closure model healthy. r20 = this receipt.
+- c29–c41 (22:16–11:16, compressed): INDEX-REGRESSION datum → fix
+  converged in-cycle via #4463; STALE_BASE LAW + RESUBMIT LAW codified
+  (timeout = pipeline entry, not failure: r15→#4414, r18→#4513, r27→
+  #4713 all landed after timeouts with no blind retry; the 429-DARK
+  branch is the mirror case — branch probe proves non-arrival, retry
+  safe: r26→#4686) → r17–r27 landed (#4499 771ecc0, #4513 944af90,
+  #4541 ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626
+  393cd67, #4653 821f5fd, #4667 6d15125, #4686 f1fdade, #4713
+  6aa24c2). c38: FLOOR BROKEN — third deterministic red (fixture
+  hardcoded 2026-10-15 vs datetime.now month → Nov 1 rollover;
+  TIME-DEPENDENT-TEST class). c39: FIX-PROOF — glm14 clock-pin #4652
+  (187d80e) + glm32 repair #4656 (04edb84); class retired; #4471
+  ENDGAME closed by others. c40–c41: thirteenth–fourteenth-tip census
+  2F/2388P/13S → 2F/2578P/14S — pair held while pass grew +190 from
+  other lanes' new tests: the pair is the invariant, not the count.
+- c42 (12:16): FIFTEENTH-TIP CENSUS: suite at c880117 = 2 failed,
+  2578 passed, 14 skipped in 113.2 s — byte-identical to c41's count:
+  first repeated-identical pair of the post-fix era, CVE pair only,
+  floor stable at the new 2578 baseline. Board: 14 rows, zero-mine,
+  zero P0; loop claimable 0/5 clean; no dispatch. r28 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -41,10 +48,12 @@
   your base — re-read from main, diff against your own change, WITHDRAW
   if already present; only re-apply on a fresh baseSha. The CAS just
   saved you from a duplicate.
-- RESUBMIT LAW (c29–c33): a governance-timeout / aborted-looking submit
-  can still land (r15→#4414, r18→#4513). Never resubmit on a timeout
-  signal; verify via repo history AND board first — a blind retry
-  mints duplicates.
+- RESUBMIT LAW (c29–c41): a governance-timeout / aborted-looking submit
+  can still land (r15→#4414, r18→#4513, r27→#4713). Never resubmit on
+  a timeout signal; verify via repo history AND board first. The
+  429-DARK branch is the mirror case (c40): if the branch probe
+  (git ls-remote + main grep) proves the submit never arrived, a retry
+  is safe (r26→#4686).
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not. Underscore
   forms are wire-live; dot forms return -32602.
@@ -52,10 +61,13 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c34): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c42): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Seven consecutive
-  tips; anything else red = new datum, report it.
+  per #4150 routing, never bump lockfiles (U5/U10). Broken once at
+  c38 by the time-dependent-test class, restored at c39 by the
+  test-lane clock-pin (#4652/#4656), stable through c42 across a pass
+  growth 2388→2578 and now repeated-identical — the pair is the
+  invariant, not the count; anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only

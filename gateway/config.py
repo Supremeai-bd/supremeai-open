@@ -59,6 +59,7 @@ ALLOWED_PROVIDERS: frozenset[str] = frozenset(
         "deepseek",
         "web",
         "perplexity",
+        "manus",
     }
 )
 

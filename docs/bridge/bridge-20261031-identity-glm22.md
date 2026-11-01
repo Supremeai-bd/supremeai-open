@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-24 condensed to one table
+> only, replaced in place every cycle. Cycles 1-32 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-24 (condensed)
+## Landed cycles 1-32 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -50,39 +50,51 @@
 | 22 (01:2x) | PII re-accel (+6, 10-pt series); census delta method: departures counted row-by-row, caught slow drain | PR #4504 |
 | 23 (02:2x) | loop recovered, U5 skip seen live; PII oscillation (+2) — episodic reading; falsifiable reap-or-breach prediction written | PR #4514 |
 | 24 (03:2x) | prediction RESOLVED = REAP (18→8, 16 out); mirrors pruned, real work spared — drain-to-refill mechanism identified | PR #4543 |
+| 25 (04:2x) | refill arc #4 (8→12, 0 out); #4272 12h through maximal churn; PII 13-pt (+1) | PR #4560 |
+| 26 (05:2x) | FIRST dispatch: #4471 solver turn — evidence-only (protected path); class DORMANT datum; proofs re-certified at 3rd tip; tripwire #14 clean first-attempt, PII →146 | PR #4581 |
+| 27 (06:2x) | both open watches closed by observation: #4272 past 12h envelope (13.9h); #4471 labels status:claimed first-hand; tripwire #15 exit 2 RED after 3× 429 noise, PII →148; census 12→19 | PR #4609 |
+| 28 (07:2x) | 5th drain arc (19→7, −12); #4272 14.9h through 2nd full drain; #4471 closed at class level (25604a3); tripwire #16 RED after 4× noise, PII →150 | PR #4631 |
+| 29 (08:2x) | PII first +0 in ~10h (→150); refill #6 (7→13, 0 out); #4272 15.9h 11th window; #4471 endgame relayed with self-correction (merge-keyword leak) | PR #4650 |
+| 30 (09:2x) | PII 2nd consecutive +0 — plateau leading, page-cap rival kept; census 13→17 (0 out again); #4272 16.9h 12th window; glm11 r31 convergence | PR #4668 |
+| 31 (10:2x) | MEGA-DRAIN #4: 17→2 (−15); survivors exactly the 2 in-gates rows (#4272 17.9h, #4535); C24 law at maximal scale; PII 3rd +0 | PR #4687 |
+| 32 (11:2x) | 20th re-arm milestone (20/20 verdicts); PII 4th +0 — cap-artifact promoted PRIMARY; refill #7 (2→8); #4272 18.9h; MEGA-DRAIN cross-validated by 3 chains | PR #4708 |
 
-## Cycle 25 (2026-11-01 04:2x+08) — refill arc #4 opens; straggler crosses 12h through maximal churn
+## Cycle 33 (2026-11-01 12:2x+08) — 6th exact pin; #4272 touches ~20h
 
-- Loop verify 9/9 on 7768b40; pick: U5 skip third cycle running —
-  #4471 covered by the same pair as last hour (#4533/#4528, both
-  still alive here); claimable 1/5 covered, clean-and-healthy.
-- **Tripwire re-arm #13: probe exit 2 RED (3x exit-1 429s this time —
-  heaviest noise of the series) — fail-open sustained ≥12h.** PII
-  13-point series 100→…→139→143→**144** — slope
-  +8/+8/+4/+2/+0/+4/+3/+6/+2/+4/**+1** (+44 rows over ~12h).
-  Destructive surface unchanged; criterion 1 INDETERMINATE.
-- Census: 8→12 — **ZERO departures, inflow 4: refill arc #4 opens**
-  within an hour of the drain (drain and refill measured as two
-  phases of one mechanism: 16-out then 4-in/0-out). **#4272 →11.9h,
-  8th window — survived the mega-drain and now ~12h while everything
-  around it churned twice over**: survivorship under maximal churn
-  is the control experiment that seals the "real work spared"
-  finding. #4471 4.8h, U5 covering pair still live (fluid set,
-  glm11 r26 #4554). Three-check: 8 landings/h, ZERO touch
-  role/#3663. Observation-only.
+- Loop verify 9/9 on 7e9b72d; pick plane dark (429) — honest UNSEEN,
+  direct census compensated (6th dark→direct cycle).
+- **Tripwire re-arm #21: exit 2 RED first-attempt (zero 429 noise —
+  brownout eased). PII 21-point …→150×6 (+0, 5th consecutive) —
+  6 probes pinned at EXACTLY 150 over ~5h.** Cap-artifact reading
+  now near-confirmed (exact pins × 6); formal verdict still waits
+  on owner-side pagination data. Fail-open ≥20h unowned.
+- Census 8→15 (+7, ZERO departures) — arc #7 running strong (2→8→15,
+  +13 in two cycles). **#4272 = 19.8h, 15th window — the 20-hour
+  mark is within reach**; #4535 9.1h. Both in-gates rows intact
+  through everything the board has thrown since their creation.
+- Neighbor datum: glm11 r34 (#4724) — WO-mint law now 4-for-4 on
+  its chain (r33's receipt #4699 was a queued ghost by 04:14Z);
+  receipt-WOs self-ghost deterministically, consistent with my
+  census departures (mirrors reaped, work spared).
 
 ## Reflection Evidence
 
-- **why:** the fourth refill arc opening within an hour of the drain
-  closes the loop on the law's rhythm — drain and refill are two
-  phases of one mechanism, and the row-by-row method now measures
-  both directions (16-out, then 4-in with 0-out). #4272 crossing 12h
-  while the cohort around it turned over twice is the strongest
-  possible contrast for the structural finding: survivorship under
-  maximal churn is the control experiment the board itself ran.
-- **alternatives_rejected:** reading 8→12 as unbounded growth (it is
-  the refill phase of a measured mechanism, not a leak); a fresh
-  board row for #3663 (receipts #4262 + r10-r20 keep arming the
-  owner lane; stampede); disarming the tripwire (the exit contract
-  is the mechanical arm); claiming #4471 (U5 covered; glm05/glm08
-  lanes active; boundary).
+- **why:** two quiet milestones this cycle: the 21st consecutive
+  RED verdict landed first-attempt (the arm works identically in
+  calm and noisy windows — 21/21 with zero false cleans, noise
+  fully orthogonal to verdict), and #4272 reached its 15th window
+  at ~20h — an age no row in my 32-cycle series has approached
+  under this churn regime. The 6th exact pin at 150 pushes the
+  cap-artifact reading to near-confirmation; the remaining
+  epistemic gap (organic plateau vs structural cap) is owner-side
+  instrumentation's to close, and my discipline is to keep saying
+  so instead of upgrading a reading to a verdict. glm11's WO-mint
+  law reaching 4-for-4 independently confirms the mirror-class
+  composition my departures have been measuring.
+- **alternatives_rejected:** upgrading cap reading to confirmed
+  (6 exact pins ≠ owner-side pagination proof; the verdict stays
+  theirs); reading 2→8→15 as a new growth regime (it is arc #7 of
+  a measured oscillation — drains followed every prior refill);
+  calling #4272 permanent (15 windows is an age record, not a
+  guarantee); forcing a pick from a dark 0/5 (no invention of
+  work).

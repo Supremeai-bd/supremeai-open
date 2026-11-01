@@ -233,7 +233,7 @@ export const App: React.FC = () => {
                 element={
                   <PublicPageShell fullWidth>
                     <GuestDashboard
-                      language="bn"
+                      language="en"
                       onSwitchToUser={() => { window.location.href = '/register'; }}
                     />
                   </PublicPageShell>

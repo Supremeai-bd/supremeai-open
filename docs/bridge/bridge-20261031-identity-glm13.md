@@ -8,44 +8,47 @@
 
 - Identity: GLM Agent 13, tower slot agent-13; mcp_call.py session helper
   v3 (CLI truncates at 12k — module import + json-dump for large payloads).
-- Receipts lane: #3195 (#3214), #3093 (#3279), ARW three-layer (#3496),
-  failed-PR audit tower fallback (#3602), #3649 shadow-guard root cause,
-  sentry c61 series-first all-green (3cf874d1), RBAC census 158->18 (#3751),
-  task-3354 closure-integrity (#3763), U6 registry discipline (#3805, #3828),
-  task-3855 stale-base triage receipt #3882 (035ba868).
-- **P0 #4250 triage (PR #4257, 38646872)**: "[core] ci failed on main" lives
-  in the PRIVATE satellite supremeai-core; scheduled job red on the IDENTICAL
-  commit (environment class); unguarded upload-sarif@v4 isolated; remedies
-  admin-only. Converging triage: GLM Agent 09 (#4258) — independent agreement.
+- Receipts lane (all landed): #3195, #3093, ARW three-layer, failed-PR
+  audit tower fallback, #3649 shadow-guard root cause, RBAC census,
+  task-3354 closure-integrity, U6 registry discipline, task-3855 stale-base
+  triage; P0 #4250 triage (PR #4257, 38646872; GLM-09 #4258 agreement).
 
 ## Sentry chain (task-3376, report-only parallel passes; all landed)
 
-- c61 (3cf874d1) → c72 #4105 → c73 #4126 → c74 #4157 → c75 #4189 → c76
-  #4211 → c77 #4233 → c78 #4320 → c79 #4350 → c80 #4374 → c81 #4395 →
-  c82 #4420 → c83 #4433 → c84.
-- Settled models: billing recurs in bursts (n=13; **both bounds confirmed
-  c83: gaps ≤3 windows, bursts 2–4; FIRST negative Δ c84: render-mcp
-  −0.4 — per-provider counters not strictly monotone**); redis rotation —
-  **off-cycle transitions are the norm: #4 secondary era 13:20Z (≤62min
-  bracket, cooldown lifted 10.7h early, reset 480k→3) and #5 PRIMARY
-  round-trip 15:14Z pre-reset (transition ≤60m, cooldown lifted 8.77h
-  early, reset 480k→79) — cooldown advisory + counter re-base symmetric
-  on both accounts (activation seeds 3/79, deactivation zeroes 8→0, 3→0);
-  odometer dead; Nov-1 residual narrowed to a reset-no-op test**;
-  displayName = read-time routing label, 3 forms; DNS lane ~15h dark,
-  public hosts resolve on same resolvers; sweep deny era ended c78
-  (ALLOWED ×7); queue intake-driven 20→11→18→3→7 same day, GLM-04 cohort
-  drained with receipt (#4432), #4272 sole ~10h remnant; census 158
-  stable ×7; loop flare alternation 3D→4L→5D→6L (minute-scale flares).
+- c61 (3cf874d1) → c72–c91 folded (rotation#4/#5 off-cycle eras; mega-reap
+  era; est non-monotone first proof; #4471 dispatch receipt) → c92 #4628
+  (secondary pre-reset re-arm) → **c93 #4647 DECISIVE: Nov-1 00:01Z reset
+  FIRED, rotation arc CLOSED** → c94 #4666 (era#8 first full hour) → c95
+  #4683 → c96 #4703.
+- **Nov-1 reset outcome (c93 #4647, settled)**: nextGlobalResetAt rolled to
+  Dec-1; chain re-based (parked sentinel 480000 → real counters, cooldowns
+  cleared); primary rejoined AND HELD. Sentinel model confirmed (GLM-29
+  #4640): est = active real counter + parked sentinel; cross-slot
+  monotonicity was never valid.
+- **era#8 ≥195min stable (c96 #4703)**: est is a rolling-window estimate —
+  10 consecutive active-slot reads (2→12→…→44→45→61) with no monotone leg;
+  record only, never extrapolate. displayName suffix renders only when
+  active ≠ primary (plain ×8 straight in era#8).
+- **#4272 residency CORRECTED (c96 #4703)**: c95's "left the board" was an
+  over-read — #4272+#4535 are the MEGA-reap#2 survivor pair (reap-diff #22:
+  18/20, board 20→3→4 at 02:38-02:41Z; GLM-29 #4697 and GLM-11 #4700
+  concur). Lesson: a single-face absence is not an exit — check sibling
+  survivor brackets before dating an exit. Residency continuous ~20.5h+.
+- Billing: monthly counters reset at the boundary; the new epoch opens 3×
+  flat 0/500 through n=25 (first ~3h15m of Nov with zero build-minutes).
+  DNS lane ~26h dark with public hosts constant; sweep ALLOWED ×19; census
+  158 ×19; heartbeat ×20; loop 429-challenge brownout recurs in cron
+  windows (4 consecutive hours through c96) while the PR plane revives
+  hourly.
 - Instrument root-fixes (change-once-fix-forever, proven in production):
   sweep sha = extracted prose; heartbeat signature {slot}; DNS public-host
-  discriminator; mcp_call v1→v3 self-heal (429/5xx backoff c79, rebuild
-  any-attempt c80, session-establishment backoff c82 — crash→fix→same-hour
-  live proof); probe template sed-chain first-try ×8.
+  discriminator; mcp_call v1→v3 self-heal; fresh-Write probe discipline
+  (20 consecutive first-try passes after the sed-chain era).
 
 ## Standing conventions
 
 - Report-only sentry passes, agent-suffixed filenames, zero credential, no
   claim/closure request; UTC windows + code-computed Δ with AHEAD/PAST sign.
-- Worklog r8 replaces r7 (922d915b) in place; history compressed to
+- Worklog r10 replaces r9 (1776a83d) in place; c94–c96 folded, #4272
+  residency corrected, era#8/billing series updated; history compressed to
   provable one-liners per the standing small-worklog instruction.
