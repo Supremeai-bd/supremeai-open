@@ -1,32 +1,31 @@
-# Sentry lane restart — GLM Agent 29 (Job ID 486833) — c110 datum (15:29–15:52Z, 2026-11-01 UTC)
+# Sentry lane — GLM Agent 29 (Job ID 486833) — in-place ledger, c111 datum (16:29–16:44Z, 2026-11-01 UTC)
 
-Owner purge #4965 (Batch 1/5, 14:56Z) removed the 32-cycle chain `docs/reports/SENTRY_C*` — accepted as owner-side hygiene; history preserved in git (PRs #4888 → #4907 → #4931 → #4961). This file restarts the lane MINIMAL and IN-PLACE (one file, latest datum + durable laws only), per the standing hourly mandate.
+Post-purge restart (c110, PR #4986): the 32-cycle `docs/reports/SENTRY_C*` chain was removed by owner purge #4965; this file re-anchored minimal in-place and **survived the 58-file lean purge #4995** — per-cycle files stay retired.
 
 ## Durable laws (zero-credential, report-only lane)
-- **Watchdog = per-WO verifier**: closes a bridge WO once its slug is in supremeai-open main history (`<!-- watchdog:auto-close -->`; #4905 closed ALONE). Observed close latency ∈ (55, 127+) min. Batch "sweeps" (#2: ~19 WO in ~25 s @ 12:31:57Z) are the batch face of the same verifier — mass-wave model retired at c110.
-- **Hollow windows drift hourly**: 12:30, 13:31, 14:38, **15:43:10Z** — gaps 61/67/65 min (~64±3). Signature: 200-shell/503 faces, 40–110 ms, heals ≤ ~90 s. The fixed :30–31Z law was falsified (lived one pass).
-- **Health shapes are tool-determined**: `system_health` → compact 22-service summary; `health_full_sweep` → 34-provider snapshot dict. Not time-phases.
-- A dead tower session answers **404** (not -32000) → re-handshake mandatory. Dotted tool names absent (census 158, dotted=0, 12th).
-- est (redis) is activity-coupled, no band (13–134 observed); secondary zero ×9.
-- render `update_failed` 48th; build-minutes burn +0.9–4/window while it persists.
+- **Watchdog DUAL-MODE (settled c111)**: (a) per-WO verifier closes individual WOs on slug-join, latency 53–166 min (n=2: #4905, #4930 — long tail); (b) batch sweep every ~3.2–3.7 h (n=3: 09:20:33, 12:31:57, ~15:50Z) drains the board in bulk. c110's "mass-wave retired" was premature — corrected here.
+- **#4535 immunity**: the in-gates elder survived sweeps #1+#2+#3 + audit + ~22 h (21 straight reads).
+- **Hollow windows are irregular tower-edge recycles**: faces 12:30, 13:31, 14:38, 15:43, 16:30 (+16:42 aftershock) — gaps 61/67/65/47 min; both clock models (fixed-hourly, drifting-hourly) falsified. Signature 200-shell/503, 40–160 ms, heals ≤ ~95 s.
+- Health shapes are tool-determined: `system_health` → compact 22; `health_full_sweep` → 34-provider dict.
+- Dead tower session → 404 (re-handshake mandatory); census 158 dotted=0 (13th).
+- est activity-coupled 13–134, no band; secondary zero ×10.
+- render `update_failed` spreads primary→worker+api; brain degraded; build burn +0.9–4/window.
 
-## C110 datum (15:29–15:52Z)
-- **Hollow #4 15:43:10Z CONFIRMED** (predicted 15:39–15:50Z HIT): 503 face 15:42:30Z (166 ms) → `{}` @40 ms + queue 0 rows; healed ≤82 s with a 4-degraded post-burst.
-- **NO sweep #3** (c108 window 15:31–15:45Z): board 20→22 rows, ZERO closures — per-WO verifier model ×2 confirmed; regen ~+5/h (births #4955–#4978 incl. post-purge restart WOs #4970/#4972).
-- **#4930 open 127 min** (merged 13:44Z) > c109 band (53,104) → verifier latency tail stretched; verdict-null persists (commentCount=0). #4905 confirmed closed, verdict-null. **#4535 20th straight PRESENT** (~20.6 h).
-- **render update_failed SPREADS**: primary 48th → worker + api newly degraded ("Container running previous build"); brain degraded 2nd window; build 6.8/500 (+0.9). telegram-primary relapsed (down, cf=1 — 5th transition); cloudflare/infisical/kaggle-pool healed (c109 reboot-cluster closed). Boot uptime 5329 s → single reboot ~14:05:44Z (agrees c109's 14:05:57Z; no 2nd reboot).
-- EP#18 band 15:38–15:41Z: 12 reads ZERO faces (c109 cluster non-recurrence). est 13 (quiet face; active-regime forecast MISS — coupling holds, regime flipped). WK 404 (4th dark, retired). PR-plane 1-open (#4872 ~3.4 h stale; #4956 landed). Loop `--verify-only` 9/9 PASS on post-purge main.
+## C111 datum (16:29–16:44Z)
+- **Sweep #3 caught (cross-confirmed ×3)**: my board 22 @15:51:30Z → drained (glm19: 18→2; glm11: 11→1, n=3 intervals 3.2–3.7 h, edge ~15:50Z) → 5 rows @16:31Z (4 young births + #4535); 6 rows @16:44Z (#5007 birth). Only the elder + <30-min-old births survive sweeps.
+- **Hollow #5 16:30:00–16:31:05Z + AFTERSHOCK 16:42:32–16:44:07Z (~95 s)** — first double-hollow hour; the 65±3-min gap model falsified at n=4 (actual 47 min).
+- **#4930 closed `bridge:landed`, stateReason COMPLETED, comments=1** (predicted ≤16:44Z HIT) — verifier latency ~126–166 min; #4905 closed-in-sweep (glm11).
+- **#4535 21st straight** (~22 h; 21.1 h curve-cross decision resolved: elder persists).
+- EP#19 band 16:38–16:41Z: 12 reads ZERO faces (n=15; #17 sole cluster). render trio (primary/worker/api) degraded 2nd window + brain; telegram flaps 0↔1 unreachable at ~15 s cadence; cf/infisical/kaggle healed. est 62; secondary 10th zero; census 158 dotted=0 13th; WK 404 5th dark; boot 2.44 h (single reboot ~14:06Z); PR-plane #4872 still open ~4.3 h stale.
+- **Scorecard: 7 HIT / 2 honest-MISS** (hollow #5 timing; "mass-wave retired" falsified). 35/35.
 
-**Scorecard: 10 HIT / 2 honest-MISS (#4930 timing, est regime). 34/34.**
-
-## C111 falsifiable predictions
-1. **Hollow #5 ≈ 16:48Z ± 6 min** (gap model 65±3); a :30–31Z hit instead would revive the hourly law.
-2. **#4930 closes by ~16:44Z** (latency tail ≤ 180 min); verdict-null at close = drift ⑦ stable.
-3. render trio stays degraded; if worker recovers → spread was transient; build +1–4 more burn. telegram 6th transition watch.
-4. #4535 21st (~21.6 h) — the 21.1 h curve-cross decision lands at this read.
-5. est any value (no band); secondary 10th zero; tertiary wake = rotation event.
-6. census 158 dotted=0 13th; WK 5th dark note; EP#19 band 16:38–16:41Z (6th run).
-7. board 22 + births (+4–8/h); PR births ≥ #4979; #4872 disposition watch.
+## C112 falsifiable predictions
+1. **Sweep #4 ≈ 19:10Z ± 25 min** (timer 3.2–3.7 h from ~15:50Z edge): board 6+ → drain to ≤2 + births refill.
+2. Hollow #6: NO point prediction (no clock model survives) — record the gap honestly; expect a face within the 47–67 min band.
+3. **#4535 22nd** (~23.6 h; first-ever 24 h-crossing watch).
+4. Young WOs #4991/#4996/#5001/#5003/#5007 (slugs already in main): reaped by verifier or sweep #4; still-open at c112 (>60 min) → verifier latency floor >1 h applies to young births too.
+5. render trio: worker/api recovery → spread was transient; persistence → systemic; build 6.8 +1–4 burn; brain 3rd window.
+6. est no-band; secondary 11th zero; census 158 dotted=0 14th; WK 6th dark note; EP#20 band 17:38–17:41Z (7th run); #4872 disposition (5 h+ stale).
 
 ## বাংলা সারসংক্ষেপ
-পাস c110 (১৫:২৯–১৫:৫২Z): প্রথমেই owner purge #৪৯৬৫-এর পর লেন-পুনরারম্ভ — ৩২-চক্রের পুরোনো chain মুছে গেছে (git-এ সংরক্ষিত), এই ফাইলই এখন ন্যূনতম in-place সেন্ট্রি-লেজার। **ঘটনা ১ — hollow #৪ নিশ্চিত**: ১৫:৪৩:১০Z-এ ৫০৩ → `{}` (৪০ms) + queue শূন্য, ≤৮২ সেকেন্ডে সুস্থ; ফাঁক-ধারা ৬১/৬৭/৬৫ মিনিট = ভাসমান-ঘণ্টা আইন ×৩ (পূর্বাভাস ১৫:৩৯–১৫:৫০Z সঠিক)। **ঘটনা ২ — sweep #৩ নেই**: বোর্ড ২০→২২, শূন্য বন্ধ — watchdog-এর per-WO যাচাইকারী মডেল ×২ নিশ্চিত, গণ-ঢেউ মডেল অবসর; #৪৯৩০ এখনো খোলা (১২৭ মিনিট — ব্যান্ড-ছাড়), #৪৫৩৫ ২০তম উপস্থিত। **ঘটনা ৩ — render-এ update_failed ছড়াচ্ছে**: primary (৪৮তম) থেকে worker+api-তে নতুন degraded; brain ২য় জানালা degraded; telegram পুনরাবৃত্তি (down), অন্যদিকে cloudflare/infisical/kaggle সুস্থ। EP#১৮ নেতিবাচক (১২ পাঠ, শূন্য face), est ১৩ (শান্ত), census ১৫৮ dotted=০ ১২তম, WK ৪র্থ অন্ধকার, boot ~১৪:০৫:৪৪Z (একক রিবুট নিশ্চিত), লুপ ৯/৯ PASS। স্কোরকার্ড ১০ সঠিক / ২ সৎ-মিস। পরের পাসে (c111): hollow #৫ ≈১৬:৪৮Z ±৬, #৪৯৩০ বন্ধ ≤১৬:৪৪Z, #৪৫৩৫ ২১তম, render-ত্রয়ী নজর।
+পাস c111 (১৬:২৯–১৬:৪৪Z): **তিনটি হেডলাইন**। (১) **Sweep #৩ ধরা পড়লো — cross-confirm ×৩**: আমার বোর্ড ২২ @১৫:৫১:৩০Z → glm19 দেখেছে ১৮→২, glm11 দেখেছে ১১→১ (n=৩, ব্যবধান ৩.২–৩.৭ঘ, প্রান্ত ~১৫:৫০Z); আমার রিড ৫ সারি @১৬:৩১Z, ৬ @১৬:৪৪Z (#৫০০৭ জন্ম) — শুধু প্রবীণ #৪৫৩৫ (২১তম, ~২২ঘ) ও <৩০মিনিট বয়সী জন্মরা বাঁচে। (২) **Hollow #৫ + আফটারশক**: ১৬:৩০–১৬:৩১Z ও ১৬:৪২–১৬:৪৪Z (~৯৫সে হিল) — প্রথম ডাবল-হollow ঘণ্টা; ৬৫±৩মিনিট ঘড়া-মডেল n=৪-এ ভাঙলো (প্রকৃত ৪৭মিনিট) — হলো এখন "অনিয়মিত tower-edge রিসাইকেল"। (৩) **Watchdog দ্বৈত-মোড আইন**: per-WO verifier (একক বন্ধ, latency ৫৩–১৬৬মিনিট, n=২) + ব্যাচ sweep (~৩.২–৩.৭ঘ) — c110-এর "গণ-ঢেউ অবসর" ভুল ছিল, সংশোধিত। #৪৯৩০ বন্ধ (bridge:landed, COMPLETED) ✓। স্কোরকার্ড ৭ সঠিক / ২ সৎ-মিস। EP#১৯ নেতিবাচক (n=১৫); render-ত্রয়ী degraded টেকে; est ৬২, secondary ১০ম শূন্য; census ১৫৮ ১৩তম; WK ৫ম; c110-লেজার ৫৮-ফাইল lean purge-এও টিকেছে। c112-এ: sweep #৪ ≈১৯:১০Z ±২৫, #৪৫৩৫ ২২তম (২৪ঘ-পার নজর), তরুণ WO রিপ-নজর, হলো বিনা-পূর্বাভাসে।
