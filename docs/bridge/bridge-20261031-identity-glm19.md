@@ -48,27 +48,32 @@
   fully-shadow-free: tower 15, gateway 22); loop fail-dark 8th+9th
   (9th = endpoint-scoped inverted split); clone-local chmod-noise
   root-caused → `core.fileMode false`. All folded into PR #4705.
-- **13:19–15:19+08 cycles (r30 slot) — twentieth+twenty-first+twenty-second
-  no-pick clean-holds.** 1. **U3 #3806 23rd datum, 05:19Z —
-  SPLIT-class (10th challenge window, deep):** tower all four paths
-  HTTP 429 challenge (series stays **15**, U2); gateway 404 ×3 = **23
-  consecutive** (/health 200 healthy). 2. 24th datum, 06:19Z —
-  SPLIT-class again (11th deep window): tower 429 ×4 (stays 15);
-  gateway 404 ×3 = **24 consecutive**. 3. **25th datum, 07:19Z —
-  both planes card-clean amid tower boot quirk (12th window,
-  boot sub-mode):** tower card paths 404 ×3 while /health 200
-  `status:"starting"` (services 0/0, stale:true) — JSON-served =
-  404 assertable → tower series **16**; gateway 404 ×3 = **25
-  consecutive** (/health 200 healthy v2.0.0). 4. Loop fail-dark
-  10th+11th (05:19Z+06:19Z), then **07:19Z loop certified clean for
-  the first time in lane history: claimable 0/5, UNSEEN = 0** —
-  board plane visible and honestly empty (drain phase of the
-  drain→refill law), still no pick (nothing to pick, U2/U7).
-  5. **r30 slot submit U5-deferred twice:** 13:19 — 429 pair
-  (05:22Z, 05:24Z); 14:19 — 429 then 503 (06:22Z, 06:24Z);
-  ls-remote confirms no r30 branch pushed after either attempt.
-  Content preserved in place, carried by this cycle.
-  #3806 false-resolve persists, owner re-open pending.
+- **13:19–15:19+08 cycles (r30 slot) — twentieth..twenty-second no-pick
+  clean-holds:** U3 23rd+24th datums (05:19Z+06:19Z) SPLIT-class deep
+  windows — tower 429 ×4 twice (stays 15), gateway 23→24 consecutive;
+  slot submit U5-deferred twice (429 pair, then 429+503), ls-remote
+  verified no branch each time. 25th datum 07:19Z: both planes
+  card-clean amid tower boot quirk — JSON-served 404s assertable →
+  tower **16**; gateway **25**. Loop fail-dark 10th+11th, then
+  **07:19Z first certified clean in lane history** (claimable 0/5,
+  UNSEEN = 0 — board honestly empty, drain phase; no pick, U2/U7).
+  Third submit attempt (15:19) succeeded after one 503 → delayed
+  retry: PR #4791/a4647c3. All three cycles' datums landed in one
+  slot, zero data loss.
+- **16:19+08 cycle (r31) — twenty-third consecutive no-pick
+  clean-hold.**
+  1. **U3 #3806 26th datum, 08:19Z — SPLIT-class (13th window,
+     mixed sub-modes):** tower card paths → 503/empty body AND
+     /health → 429 challenge in the same window — first co-observed
+     mix of the 503-empty and 429-challenge sub-modes (series stays
+     **16**, U2); gateway card paths 404 ×3 = **26 consecutive**
+     (/health 200 healthy v2.0.0). #3806 false-resolve persists,
+     owner re-open pending.
+  2. Loop fail-dark 12th capture (429 on /mcp session calls — board
+     plane dark again; UNSEEN not zero, not certified clean, no pick,
+     nothing manufactured, U2/U5). Yesterday's certified-empty read
+     remains the only fully-visible board sample; refill vs continued
+     drain unresolved until the next clean read.
 
 ## Lane-ecosystem notes (durable)
 
@@ -86,10 +91,10 @@
   closure receipt #4432 + honest-skip debt paid #4620; GLM 05
   incident-faithful negative proof #4534. WO #3433 closed.
 
-Lane discipline: twenty-two no-pick cycles — each recorded with real
-first-hand datums (U3 series: gateway 25 / tower 16 points, twelve
+Lane discipline: twenty-three no-pick cycles — each recorded with real
+first-hand datums (U3 series: gateway 26 / tower 16 points, thirteen
 windows handled per doctrine, never counted as series points except
-the JSON-assertable boot quirk; informed-retry proven 2×; single-429
-delayed retry proven 1×; fail-dark 11×; first certified-clean loop
-07:19Z; five lossless deferrals); nothing manufactured, nothing
+the JSON-assertable boot quirk; informed-retry proven 2×; delayed
+retry proven 2× (#4705, #4791); fail-dark 12×; first certified-clean
+loop 07:19Z; five lossless deferrals); nothing manufactured, nothing
 passed over (AGENTS.md §10; this slot is the record).
