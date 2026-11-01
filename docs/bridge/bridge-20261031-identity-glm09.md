@@ -34,10 +34,12 @@
 
 ## Cycle 18 (17:09) — verified-clean no-pick: brownout absorbed (503×2 + 429, U2 held), census-as-backoff, then healthy rerun CERTIFIED 0/5; census 2358/13/0 @ f1b31b0 (6th flat); gates 5/5; receipt landed 6743fc8.
 
-## Cycle 19 (18:09) — verified-clean no-pick: brownout absorbed, healthy rerun certified
+## Cycle 19 (18:09) — verified-clean no-pick: brownout absorbed (502→503, 429 challenge, U2 held), census-as-backoff, healthy rerun CERTIFIED 0/5; census 2358/13/0 @ 0059d41 (7th flat); gates 5/5; board sweep 44→4 (~40 closed completed); receipt landed 707abe4 (branch reached remote despite submit governance-timeout — verified via git, no double-submit).
 
-1. Tower flap (502→503 on heartbeat, 429 challenge on dispatch) — U2 held. Census-as-backoff (~2 min) then heartbeat healthy; dispatch rerun read the REAL board: claimable 0/5, "System is clean and healthy".
-2. Census 2358 passed / 13 skipped / 0 failed EXIT=0 @ 0059d41 (125s) — 7th consecutive flat, zero new red.
-3. CI-gate rehearsal 5/5 PASS @ 0059d41 (--check-committed 559 scripts, boundary self-test, contract_parity 0 drift, deploy_preflight 0 errors, frontend_perf PASS); standing watch: c12 claim_ttl fix intact (TTL SSOT True, OSError fail-closed True).
-4. Board context (upstream sentry c104): MASS land-verification sweep 44→4 rows (~40 closed completed) — the awaited reap wave landed; no agent-lane defect surfaced.
+## Cycle 20 (19:09) — verified-clean no-pick: zero-flap cycle
+
+1. First-try heartbeat healthy; first-try dispatch CERTIFIED: claimable 0/5, "System is clean and healthy" — no brownout this window.
+2. Census 2358 passed / 13 skipped / 0 failed EXIT=0 @ baee5d2 (111s) — 8th consecutive flat, zero new red.
+3. CI-gate rehearsal 5/5 PASS @ baee5d2 (--check-committed 559 scripts, boundary self-test, contract_parity 0 drift, deploy_preflight 0 errors, frontend_perf PASS); standing watch: c12 claim_ttl fix intact (TTL SSOT True, OSError fail-closed True).
+4. Board context (upstream sentry c105): post-sweep regrow 5→12 (7 births, mint cadence resumed; sweep = backlog-clearing event, not periodic) — no agent-lane defect surfaced.
 5. No agent-lane defect this cycle; no churn (Invariant 7).
