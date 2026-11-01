@@ -23,43 +23,48 @@
   owner prunes #4984/#4988/#4995: 62P/0F (below); scripts/ops/_INDEX.md
   559→303 scripts, 6→2 hand sections.
 - **Landed**: r21 re-anchor #5033 (c014fd9) — restart file after the
-  purge; lean census 62P/0F @ 6a3f33d; gates 5/5; claim_ttl fix intact;
-  certified 0/5 dispatch first-try.
+  purge; r22 #5053 (9bcac54) — brownout no-pick receipt, 2nd flat
+  census across the restart boundary.
 
-## Cycle 22 (2026-11-02 03:09+08) — brownout no-pick, verification receipt
+## Cycle 23 (2026-11-02 04:09+08) — certified clean + zombie-PR housekeeping
 
-- First dispatch: tower 429 (fleet cron-window contention) → board
-  UNSEEN, not certified (U2). Healthy rerun: heartbeat OK via
-  agent_heartbeat slot=agent-9 (one 502 flap, 20s backoff); board read
-  REAL: 18 open WOs, all other lanes (glm04/12/14/19/21/28, sentry) →
-  claimable 0/5, no-pick.
-- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 5ee875a
-  (8.63s) — 2nd consecutive flat across the #5033 restart boundary.
-- CI-gate rehearsal 5/5 PASS @ 5ee875a (index generator now at
-  scripts/ops/: --check-committed 303 scripts OK, boundary 21/21,
-  contract_parity 0 byte-drift, deploy_preflight 308 files 0 errors,
-  frontend_perf PASS); standing watch: claim_ttl fix intact (TTL SSOT
-  True=3h, OSError fail-closed True).
-- No agent-lane defect this cycle; no churn (Invariant 7).
+- Dispatch CERTIFIED clean: board revived via tower fallback (23 rows,
+  0 open P0, claimable 0/5) after gh CLI absence — first certified read
+  in the lean era; heartbeat first-try OK.
+- Found a zombie in my own lane: stale PR #4872 (old r20 worklog) still
+  open while its target file was removed by the docs purge — merging
+  would resurrect purged content. Escalated via github_create_issue:
+  **#5068** requests close-as-superseded (r20 already landed 843a8d0/
+  #4870; chain continues in #5033/#5053) and proposes the class-kill:
+  auto-close bridge PRs whose target blob no longer matches main.
+- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ d09d0c2
+  (8.64s) — 3rd consecutive flat. CI-gate rehearsal 5/5 PASS; standing
+  watch: claim_ttl fix intact (TTL SSOT True=3h, OSError fail-closed
+  True).
+- No agent-lane defect; no churn (Invariant 7) — the only lane write is
+  this receipt plus the #5068 escalation.
 
 ## Reflection Evidence
 
-- **why:** a new brownout shape (429 challenge at dispatch, then a 502
-  between heartbeat and board read) re-proved the c17-c19 doctrine:
-  back off, rerun healthy, and the tower yields a REAL dispatch and a
-  REAL board read — 18 open WOs, none claimable. The 2nd consecutive
-  flat lean census across a landed restart PR boundary (6a3f33d →
-  5ee875a) is the stability signal; the gate path move (scripts/agents
-  → scripts/ops + scripts/ci) is recorded so future rehearsals don't
-  chase stale paths.
-- **alternatives_rejected:** certifying the first 429-dark dispatch
-  (UNSEEN ≠ zero, U2); resubmitting r21 (verified already landed as
-  #5033/c014fd9 before acting — no duplicate PR); treating the 18 open
-  WOs as claimable (all other agents' lanes; zero cross-agent
-  collateral).
+- **why:** the first certified board read of the lean era turned up a
+  real piece of housekeeping in my own lane: a zombie PR whose target
+  file a fleet-wide purge had removed. Closing my own PR is outside
+  bridge-lane tool reach, so the root-cause-minded move is an
+  escalation that both retires the zombie AND names the class-kill
+  (target-blob watchdog) so other agents' purged PRs stop inflating
+  the open-PR count sentry watches. Filing it keeps the open count
+  honest without touching pr_lifecycle_guard (documented fail-open,
+  out of scope).
+- **alternatives_rejected:** merging PR #4872 as-is (resurrects
+  purged content against owner intent, refs #762); editing
+  pr_lifecycle_guard to auto-close such PRs myself (documented
+  fail-open, forbidden to this lane, and a code churn without a
+  solver task); staying silent about the zombie (the open-PR count is
+  a fleet health signal — sentry c114 tracks its growth).
 
 ## Rollback
 
-Docs-only in-place replace of the Cycle 22 section (baseSha recorded at
-submission): revert of the landed r22 PR restores the r21 blob. No
-code, test, or workflow surface touched this cycle.
+Docs-only in-place replace of the Cycle 23 section (baseSha recorded at
+submission): revert of the landed r23 PR restores the r22 blob. Issue
+#5068 is filed but harmless if closed unused; no code, test, or
+workflow surface touched this cycle.
