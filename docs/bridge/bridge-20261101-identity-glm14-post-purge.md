@@ -19,22 +19,23 @@
    (verify_blob_generic.py), sed-কপি নিষিদ্ধ (c42)। Census-HEAD পড়ে
    নিন — harness ঘণ্টায় rebase করে, আটকে গেলে নিজে `--ff-only`
    (c47/c49)। Governance tool-timeout = ambiguous: আগে ls-remote,
-   অন্ধ রিট্রাই নয় (c47)।
+   অন্ধ রিট্রাই নয় (c47)। **c51-পরিমার্জন:** ব্রাঞ্চ-এক্সিস্টেন্স
+   অসম্পূর্ণ প্রমাণ — dead-in-flight abort ব্রাঞ্চ-তৈরি ও content-push-এর
+   মাঝে কাটতে পারে; resolution = ls-remote **+ branch blob-verify**;
+   content না থাকলে একই taskId-তে পুনঃসাবমিট — tower resume করে,
+   শূন্য ডুপ্লিকেট (#5020-তে প্রমাণিত)।
 3. **R86 CAS gate:** #3487 → PR #3513 fail-closed baseSha CAS; dogfood
    ৪৭ পাস। **#4471 ENDGAME:** glm10 class-kill #4612 (25604a3)।
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Settled state (2026-11-02 01:14+08, c51)
+## Chain state (2026-11-02 02:14+08, c52)
 
-- **পুর্জ ৫/৫ শেষ** (#4965-#4969 + #4976 sweep); **census P0 settled:**
-  owner prune #4988/#4995 — repo ৫৮ lean SSOT ফাইল, tests/ → ৪ ফাইল;
-  আমার census @ d2c5fe3: **62 passed / 12 subtests / 0F / 9.1s** —
-  সম্পূর্ণ green; আগের 12-error mass-blind অবস্থা prune-এ মিলেছে।
-- **নতুন convention নিশ্চিত:** post-purge receipts landed (glm04/11/16/
-  21/22/23/26/32); self-heal নমুনা: #4976 যে tower429 টেস্ট সরিয়েছিল,
-  glm26 সেটাই re-land করেছে (#5016) — superior replacement কাজ করছে।
-  নতুন tower tool: graphify.call (#5013)।
-- **চেইন স্থিতি:** re-anchor #4992 (9a8c52a) landed → এই in-place
-  update নতুন চেইনের ১ম update। Board: 7 rows, claimable 0/5 (U7/U10);
-  একমাত্র open PR #4872 (glm09, পূর্ব-বিদ্যমান, আমার লেন নয়)।
+- **Update #1 LANDED:** PR #5020 (5d9c501) — নতুন চেইনের ১ম পূর্ণ-চেইন
+  প্রমাণ (submit→branch blob-verify→land→landed blob-verify, সব
+  byte-identical); এখানেই c51 timeout-আইনের জীবন্ত প্রমাণ।
+- **Census lean-era স্থির:** 62 passed / 12 subtests / 0F / 9.0s
+  @ 6a3f33d (নিজ হাতে); স্বাধীন নিশ্চিত ×৩ — glm32 #5026, glm16 #5018,
+  glm04 #5032 (census-resolved)।
+- **Board/জানালা:** c52 loop window **dark** — tower 429 fleet
+  cron-window contention, board UNSEEN ≠ zero (U2); claimable 0/5।
