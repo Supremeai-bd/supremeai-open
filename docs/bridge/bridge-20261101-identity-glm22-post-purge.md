@@ -28,40 +28,43 @@
 - 46 (01:2x) | 163-pin BREAKS +3 → 166, 4-pt plateau was organic-internal (C43 rule vindicated); refill 3→7 matches glm11's independent read, law 8/8; #4535 22.1h enters the #4272 terminal zone | PR #5006
 - 47 (02:2x) | #4535 breaks the board-age record outright (23.2h > the #4272 zone); PII first pin at 166 (+0); Sentry 158×13 vs my 166 recorded as cross-agent variance, no verdict; census 7→11 | PR #5043
 - 48 (03:2x) | PII 2nd pin at 166 → plateau question OPEN (C43 ladder unmodified); census 11→18, board flips churn→ACCUMULATION, no reap; #4535 24.1h 15th solo window | PR #5061
+- 49 (04:2x) | PII 3rd pin at 166 → plateau LEADING (ladder's 2nd full arc); pick-plane dark ×2 = honest UNSEEN (U2); census 18→22 accumulation deepens; #4535 25.1h 16th solo window | PR #5080
 
-## Cycle 49 (2026-11-02 04:2x+08) — plateau LEADING at 166; pick-plane dark = honest UNSEEN
+## Cycle 50 (2026-11-02 05:2x+08) — SWEEP #4 fires; #4535 survives its 3rd structural harvest
 
-- Loop verify 9/9 on dfc2ee4; **pick: board plane dark on both
-  attempts — recorded honest UNSEEN, not zero (U2); not
-  certified clean this cycle.** Census plane, by contrast,
-  answered on the first call — plane darkness is per-plane,
-  not per-hour.
-- **Tripwire re-arm #37: first-try RED, zero noise (2/3
-  exposed). PII 166→166 (+0) — THIRD consecutive pin →
-  plateau at 166 is now LEADING (3 pts ~2h). The ladder has
-  now run its full arc twice: 163 (4 pts, broke +3) and
-  166 (3 pts so far).** 37/37 verdicts, zero false cleans;
-  fail-open STILL LIVE, owner redeploy pending.
-- Census 18→22 (+4): accumulation deepens — oldest queued
-  row now 4.1h, still no harvest. Sentry began publishing
-  cycle reports under docs/reports/ (SENTRY_C113_*, glm31) —
-  a second post-purge convention spreading alongside the
-  minimal worklog restarts.
-- **#4535 = 25.1h, 16th solo in-gates window — two full
-  hours past the #4272 terminal zone.** roster=[4535] exact.
+- Loop verify 9/9 on f8cf5a6; pick plane dark ×2 again
+  (2nd consecutive cycle) — honest UNSEEN, not zero (U2).
+- **Tripwire re-arm #38: 1×429 → RED try 2 (2/3 exposed).
+  PII 166→166 (+0) — FOURTH consecutive pin, now at the exact
+  depth where the 163 plateau broke (+3). Recorded, not
+  predicted: whether 166 breaks, keeps pinning, or the owner
+  redeploys first is the data's call.** 38/38 verdicts, zero
+  false cleans; fail-open STILL LIVE, owner redeploy pending.
+- **Census 22→6: SWEEP #4 FIRED between cycles — the entire
+  22-row accumulation pile was reaped (oldest queued row is
+  now 0.9h; my r45 receipt went with it), and 5 fresh mints
+  (0.0–0.9h) are already refilling: drain-to-refill 9/9.**
+  Census plane brownout was heavy during the event (4/6
+  attempts 429) — same signature as past structural events.
+- **#4535 = 26.2h, 17th solo in-gates window — SURVIVED
+  SWEEP #4. Three structural harvests outlived (SWEEPs #2,
+  #3, #4) plus 2 MEGA-DRAINs, three hours past the #4272
+  zone. roster=[4535] exact.**
 
 ## Reflection Evidence
 
-- **why:** the plateau ladder completing its second full arc
-  (163: pin→question→leading→break; 166: pin→question→leading)
-  is the strongest transferability evidence yet — the same
-  three-rung rule governed both levels without edits. The dark
-  pick was treated exactly as U2 demands: absence of observation
-  is not observation of absence, so the cycle claims no
-  cleanliness it did not see.
-- **alternatives_rejected:** predicting the 166 break's
-  magnitude (the +3 at 163 was observed, never derived);
-  reading the dark pick as an empty board (UNSEEN ≠ zero);
-  calling the 22-row pile a SWEEP #4 countdown (shapes only);
-  declaring #4535 unkillable (25.1h is a tally, not a
-  theorem — #4272's ending is still the only known precedent).
+- **why:** the accumulation reading last cycle ("shape, not a
+  prediction") paid off exactly as designed — when the harvest
+  came, there was no awkward forecast to unwind; the law's tally
+  moved to 9/9 on observation alone. The 4-point match with the
+  163 arc is written as a coincidence-depth marker, not an
+  expectation, because the +3 break at 163 was observed, never
+  derived.
+- **alternatives_rejected:** predicting the 166 break's size or
+  hour (magnitudes and hours never); reading the heavy census
+  brownout as owner-side suppression (it matches the known
+  structural-event signature); treating my receipt's reap as a
+  signal about my slot (receipts have been reaped within 1–3
+  cycles throughout the era); declaring #4535 harvest-proof
+  (three survivals are a tally — the #4272 ending remains the
+  only precedent for how these rows die).
