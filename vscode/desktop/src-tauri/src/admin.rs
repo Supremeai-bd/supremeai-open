@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 const GATEWAY_API: &str = "https://supremeai-api-ulw0.onrender.com";
 const CORE_API: &str = "https://supremeai-primary-node.onrender.com";
@@ -15,11 +15,11 @@ fn admin_login_path(mode: &str) -> Result<&'static str, String> {
     }
 }
 
-#[derive(Clone)]
-struct AdminSession {
-    token: String,
-    role: String,
-    email: String,
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdminSession {
+    pub token: String,
+    pub role: String,
+    pub email: String,
 }
 
 /// Tokens are kept only in process memory; they are never returned to the WebView
@@ -27,6 +27,43 @@ struct AdminSession {
 #[derive(Default)]
 pub struct AdminSessionState {
     session: Mutex<Option<AdminSession>>,
+}
+
+const ADMIN_SESSION_FILE: &str = "admin_session.json";
+
+fn admin_session_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let dir = app.path().app_config_dir().ok()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join(ADMIN_SESSION_FILE))
+}
+
+// ROOT-CAUSE FIX (2026-11-01): the admin session used to live only in process
+// memory, so every app restart force-logged the owner out. It is now persisted
+// in the OS app-config directory and restored on launch. Kill switch:
+// SUPREMEAI_DESKTOP_NO_PERSIST_SESSION=1 restores the old in-memory behavior.
+fn persist_session(app: &AppHandle, session: &AdminSession) {
+    if std::env::var("SUPREMEAI_DESKTOP_NO_PERSIST_SESSION").is_ok() {
+        return;
+    }
+    if let Some(path) = admin_session_file(app) {
+        if let Ok(bytes) = serde_json::to_vec(session) {
+            let _ = std::fs::write(path, bytes);
+        }
+    }
+}
+
+pub fn seed_session(state: &AdminSessionState, session: AdminSession) {
+    if let Ok(mut current) = state.session.lock() {
+        *current = Some(session);
+    }
+}
+
+pub fn load_persisted_session(app: &AppHandle, state: &AdminSessionState) {
+    let Some(path) = admin_session_file(app) else { return };
+    let Ok(bytes) = std::fs::read(&path) else { return };
+    if let Ok(session) = serde_json::from_slice::<AdminSession>(&bytes) {
+        seed_session(state, session);
+    }
 }
 
 #[derive(Serialize)]
@@ -42,7 +79,7 @@ pub struct AdminLoginResult {
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .https_only(true)
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(60)) // Render free-tier cold starts take 30-50s; 20s caused false session failures
         .build()
         .map_err(|_| "Could not initialize the secure admin connection.".to_string())
 }
@@ -81,15 +118,24 @@ async fn parse_json_response(response: reqwest::Response, context: &str) -> Resu
         .map_err(|_| "The admin service returned an unreadable response.".to_string())
 }
 
-fn store_session(state: &AdminSessionState, token: String, role: String, email: String) -> Result<(), String> {
+fn store_session(
+    state: &AdminSessionState,
+    app: &AppHandle,
+    token: String,
+    role: String,
+    email: String,
+) -> Result<(), String> {
     if token.is_empty() || token.len() > 16_384 {
         return Err("The admin service returned an invalid session.".to_string());
     }
+    let session = AdminSession { token, role, email };
     let mut current = state
         .session
         .lock()
         .map_err(|_| "The admin session could not be updated.".to_string())?;
-    *current = Some(AdminSession { token, role, email });
+    *current = Some(session.clone());
+    drop(current);
+    persist_session(app, &session);
     Ok(())
 }
 
@@ -107,6 +153,7 @@ pub async fn admin_login(
     mode: String,
     email: String,
     password: String,
+    app: AppHandle,
     state: State<'_, AdminSessionState>,
 ) -> Result<AdminLoginResult, String> {
     let email = email.trim().to_lowercase();
@@ -165,7 +212,7 @@ pub async fn admin_login(
         .and_then(Value::as_str)
         .unwrap_or(&email)
         .to_string();
-    store_session(&state, token, role.to_string(), session_email.clone())?;
+    store_session(&state, &app, token, role.to_string(), session_email.clone())?;
     Ok(AdminLoginResult {
         status: "authenticated".to_string(),
         role: Some(role.to_string()),
@@ -176,6 +223,7 @@ pub async fn admin_login(
 #[tauri::command]
 pub async fn admin_verify_totp(
     otp: String,
+    app: AppHandle,
     state: State<'_, AdminSessionState>,
 ) -> Result<AdminLoginResult, String> {
     let otp = otp.trim();
@@ -185,7 +233,7 @@ pub async fn admin_verify_totp(
     let http = client()?;
     let response = http
         .post(format!("{GATEWAY_API}/api/admin/totp-verify"))
-        .json(&json!({ "otp": otp, "remember_browser": false }))
+        .json(&json!({ "otp": otp, "remember_browser": true }))
         .send()
         .await
         .map_err(|_| "The SupremeAI authentication service could not be reached.".to_string())?;
@@ -205,7 +253,7 @@ pub async fn admin_verify_totp(
         .and_then(Value::as_str)
         .unwrap_or("Platform owner")
         .to_string();
-    store_session(&state, token, role.to_string(), email.clone())?;
+    store_session(&state, &app, token, role.to_string(), email.clone())?;
     Ok(AdminLoginResult {
         status: "authenticated".to_string(),
         role: Some(role.to_string()),
@@ -246,12 +294,14 @@ pub async fn admin_dashboard(state: State<'_, AdminSessionState>) -> Result<Valu
 }
 
 #[tauri::command]
-pub async fn admin_logout(state: State<'_, AdminSessionState>) -> Result<(), String> {
+pub async fn admin_logout(app: AppHandle, state: State<'_, AdminSessionState>) -> Result<(), String> {
     let session = state
         .session
         .lock()
         .map_err(|_| "The admin session could not be cleared.".to_string())?
         .take();
+    // Explicit sign-out also clears the persisted session file.
+    let _ = admin_session_file(&app).map(|path| std::fs::remove_file(path));
     if let Some(session) = session {
         if let Ok(http) = client() {
             let _ = http
