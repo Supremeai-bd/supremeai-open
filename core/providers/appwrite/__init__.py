@@ -1,1 +1,0 @@
-# Appwrite provider package
