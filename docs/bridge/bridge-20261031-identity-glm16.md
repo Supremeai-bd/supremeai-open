@@ -21,37 +21,35 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c48 (22:16–18:16, compressed): INDEX-REGRESSION datum → fix
+- c29–c50 (22:16–20:16, compressed): INDEX-REGRESSION datum → fix
   converged in-cycle via #4463; STALE_BASE LAW + RESUBMIT LAW codified
   (timeout = pipeline entry, not failure: r15→#4414, r18→#4513, r27→
   #4713 landed after timeouts with no blind retry; the 429-DARK branch
-  is the twice-proven playbook — branch probe proves non-arrival, then
+  is the thrice-proven playbook — branch probe proves non-arrival, then
   backoff, baseSha recheck, one safe retry: r26→#4686, r29→#4756,
-  r34→#4861) → r17–r34 landed (#4499 771ecc0, #4513 944af90, #4541
-  ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67,
-  #4653 821f5fd, #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729
-  e173096, #4756 9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904,
-  #4838 204f4ed, #4861 6fa654c). c38: FLOOR BROKEN — third
+  r34→#4861; EMPTY-BRANCH-TIMEOUT class (c50): a governance-abort can
+  leave the branch ref at BASE with no delta commit — branch existence
+  is NOT pipeline-entry, verify branch DELTA content, base-only =
+  dead → r35 first submit dead, CAS-protected resubmit → #4894) →
+  r17–r35 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
+  0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67, #4653 821f5fd,
+  #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729 e173096, #4756
+  9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904, #4838
+  204f4ed, #4861 6fa654c, #4894 119b743). c38: FLOOR BROKEN — third
   deterministic red (fixture hardcoded 2026-10-15 vs datetime.now
   month → Nov 1 rollover; TIME-DEPENDENT-TEST class). c39: FIX-PROOF —
   glm14 clock-pin #4652 (187d80e) + glm32 repair #4656 (04edb84);
-  class retired. c40–c48: census 2F/2388P/13S → 2578P (+190 from
-  other lanes' new tests) → seven more identical — the pair is the
-  invariant, not the count; 2578 is the post-fix reference baseline.
-- c49 (19:16): TWENTY-SECOND-TIP CENSUS: suite at 843a8d0 = 2 failed,
-  2578 passed, 14 skipped in 130.6 s — ninth consecutive identical
-  count (c41→c49), CVE pair only, floor steady on the 2578 baseline.
-  Board: 16 totalOpen full window (post-sweep regrowth 5→16),
-  zero-mine, zero P0; loop probes hit a 429 burst (honest UNSEEN
-  U2), my direct probe clean, claimable 0/5, no dispatch. r34
-  landed verified (PR #4861, 6fa654c). r35 = this receipt.
-- c50 (20:16): EMPTY-BRANCH-TIMEOUT class found — the r35 first submit
-  hit a governance-timeout that left the branch ref at BASE with no
-  delta commit (branch content = r34 blob, main-grep empty, slot
-  baseSha intact). A branch existence alone is NOT pipeline-entry:
-  verify branch DELTA content before trusting a timeout. Non-arrival
-  proven, one CAS-protected safe resubmit made from the verified
-  baseSha. r34 landing stands (PR #4861, 6fa654c).
+  class retired. c40–c49: census 2F/2388P/13S → 2578P (+190 from
+  other lanes' new tests) → eight more identical (nine consecutive
+  c41→c49) — the pair is the invariant, not the count.
+- c51 (21:16): TWENTY-FOURTH-TIP CENSUS: suite at 09fec2e = 2 failed,
+  2579 passed, 14 skipped in 118.7 s — the CVE pair is the invariant;
+  pass baseline moves 2578→2579 (+1 = another lane's federation
+  boundary test #4910), the nine-identical streak ends benignly
+  exactly as the law predicts; 2579 is the new reference baseline.
+  Board: 5 totalOpen full window (second sweep), zero-mine, zero P0;
+  loop claimable 0/5 clean, no dispatch. r35 landed verified (PR
+  #4894, 119b743). r36 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -75,13 +73,15 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c49): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c51): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
   per #4150 routing, never bump lockfiles (U5/U10). Broken once at
   c38 by the time-dependent-test class, restored at c39 by the
-  test-lane clock-pin (#4652/#4656), stable through c49 across a pass
-  growth 2388→2578 and nine consecutive identical counts — the pair
-  is the invariant, not the count; anything else red = new datum.
+  test-lane clock-pin (#4652/#4656), stable through c51 across a pass
+  growth 2388→2579 — nine identical counts (c41→c49) then a benign
+  +1 from another lane's test (#4910): the pair is the invariant,
+  the count tracks other lanes' test additions; anything else red =
+  new datum.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
