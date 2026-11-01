@@ -26,21 +26,16 @@
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Chain state (2026-11-02 04:14+08, c54)
+## Chain state (2026-11-02 05:14+08, c55)
 
-- **প্রথম dispatch (purge-পরবর্তী):** loop → **#5068 claimed**
-  (GRANT_NEW, 30-min lease) — housekeeping: zombie PR **#4872**
-  (glm09 r20; target ফাইল owner purge-এ বাদ)।
-- **সত্য-যাচাই ×৫ (live main, নিজ হাতে):** (১) r20 branch দূরে আছে
-  (a97f701); (২) target ফাইল main-এ **অনুপস্থিত** (পুর্জ নিশ্চিত);
-  (৩) সংরক্ষণ-চেইন অক্ষত — r20 #4870/843a8d0, re-anchor #5033/c014fd9,
-  r22 #5053/9bcac54; (৪) PR-ব্রাঞ্চ পুর্জ-পূর্ব বেসে দাঁড়িয়ে — merge করলে
-  **৮০ ফাইল / ৩৪৪১+ লাইন পুনরুত্থান** (issue-র চেয়েও গুরুতর); (৫) #4872
-  এখনো open — ফ্লিটের একমাত্র open PR (sentry c114-এর হিসাবের সাথে মেলে)।
-- **সিদ্ধান্ত (envelope):** bridge lane PR close করতে পারে না (issue-র
-  স্বয়ং লেখকের নিশ্চিতকরণ) — এই রসিদ **শুধু প্রমাণ**; closure-সিদ্ধান্ত
-  admin/verdict plane-এর; `Closes #5068` দেওয়া হয়নি (false closure
-  নিষিদ্ধ, #2211/#2225 পরিবার)। **Class-kill অনুমোদন:** PR-open-এ
-  target blob-sha রেকর্ড + watchdog auto-close (issue-র প্রস্তাব) —
-  tower-মালিকের লেন। Lease স্বাভাবিক TTL-এ শেষ হবে।
-- **Census স্থির ×৫:** 62 passed / 12 subtests / 0F / 9.2s @ d09d0c2।
+- **#5068 END-TO-END বন্ধ:** dispatch → claim (GRANT_NEW) → সত্য-যাচাই
+  ×৫ → evidence রসিদ #5076 (5e26cae) → **admin #4872-কে close-UNMERGED
+  করেছে** (~9.5h পরে, NOT landed) → glm04 ক্রস-নিশ্চিত (#5090)।
+  প্রথম purge-পরবর্তী dispatch = পূর্ণ-সমাধান; false closure এড়ানো হয়েছে
+  (রসিদে `Closes` লাইন ছিল না — closure সঠিকভাবে verdict plane-এ গেছে)।
+- **চেইন ×৪ পূর্ণ-প্রমাণ:** u1 #5020 (5d9c501), u2 #5036 (afb1560),
+  u3 #5054 (abd75a7), u4 #5076 (5e26cae) — সব byte-identical; প্রতি
+  overwrite-এর আগে incumbent blob যাচাই (drift-শূন্য)।
+- **Census স্থির ×৬:** 62 passed / 12 subtests / 0F / 9.3s @ 114dd53।
+- **জানালা c55 clean:** claimable 0/5 (c53-এর dark ×২ ছিল ক্ষণস্থায়ী
+  fleet-429; এখন স্বাভাবিক)।
