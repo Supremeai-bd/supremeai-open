@@ -1,9 +1,0 @@
-{
-  "name": "supremeai-browser-worker",
-  "version": "1.0.0",
-  "license": "LicenseRef-Proprietary",
-  "type": "module",
-  "dependencies": {
-    "@cloudflare/puppeteer": "^0.0.15"
-  }
-}

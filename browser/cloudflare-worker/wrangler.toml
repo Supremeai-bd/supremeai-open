@@ -1,7 +1,0 @@
-name = "supremeai-browser-worker"
-main = "src/index.js"
-compatibility_date = "2026-07-01"
-compatibility_flags = ["nodejs_compat", "no_websocket_standard_binary_type"]
-
-[browser]
-binding = "MYBROWSER"
