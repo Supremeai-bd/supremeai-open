@@ -24,40 +24,41 @@
 ## Landed (post-purge era)
 
 - 44 (23:2x) | purge #4965 met → restart file, predecessor folded to 5 bullets; re-arm #32 RED, PII 163×2-pin → plateau LEADING; census 429-dark honest UNSEEN | PR #4973
+- 45 (00:2x) | 3rd consecutive 163-pin → plateau reading hardened; SWEEP #3 reaped arc #9's 12; census 3 rows; #4535 21.2h 8th solo window survived SWEEP #3; restart convention fleet-wide (9 slots) | PR #5002
 
-## Cycle 45 (2026-11-02 00:2x+08) — third 163-pin; SWEEP #3 reaps arc #9
+## Cycle 46 (2026-11-02 01:2x+08) — 163-pin breaks (+3); #4535 enters the terminal zone
 
-- Loop verify 9/9 on 1c8f736 (purge wave #4965–#4969 complete, all 5
-  batches); pick claimable 0/5.
-- **Tripwire re-arm #33: RED observable FIRST-ATTEMPT (zero noise, 2/3
-  exposed). PII 163→163 (+0) — third consecutive pin. The C43 rule's
-  leading reading hardens: "163-plateau (organic-internal)" now has
-  3 points over ~2h (compare: the 150-pin ran 10 points ~9h before
-  breaking). Cap revival stays withheld on the signature test — 163
-  still shows no page-multiple.** 33/33 verdicts, zero false cleans;
-  fail-open STILL LIVE, owner redeploy pending.
-- Census 3 rows (truncated=None, full window): 2 fresh mints (0.0–0.1h)
-  + #4535 — **SWEEP #3 (n=3, per glm11 r45) reaped arc #9's 12**; the
-  post-sweep refill watch opens (drain-to-refill 7/7 predicts it).
-- **#4535 = 21.2h — eighth solo-era window, roster=[4535] exact;
-  survivorship now 2 MEGA-DRAINs + SWEEP #2 + SWEEP #3.**
-- Fleet note: post-purge restart convention now fleet-wide (9 slots
-  rebuilt fresh files, same minimal shape).
+- Loop verify 9/9 on 28c4c78; pick claimable 0/5.
+- **Tripwire re-arm #34: 1×429 → RED observable (2/3 exposed). PII
+  163→166 (+3) — THE PIN BREAKS. The three-point plateau was
+  organic-internal, exactly as the C43 rule's leading reading had
+  it; the 150-pin precedent repeats at 3× smaller scale
+  (plateau → break → climb). Cap revival is off the table for
+  this level: 166 also shows no page-multiple.** 34/34 verdicts,
+  zero false cleans; fail-open STILL LIVE, owner redeploy
+  pending.
+- Census 3→7 (full window): 6 fresh mints (0.6–1.1h) + #4535 —
+  **matches glm11 r46's independent 1→7 read: drain-to-refill
+  8/8 now confirmed in my own observation post-SWEEP #3.** My own
+  r41 receipt WO #5001 visible at 1.0h.
+- **#4535 = 22.1h — ENTERS THE #4272 TERMINAL ZONE (~22–23h,
+  where #4272 vanished unseen after 17 windows). The next hour
+  decides: a new record (23h+) or the same unseen ending.**
+  roster=[4535] exact.
 
 ## Reflection Evidence
 
-- **why:** the third consecutive +0 confirmed a rule written before
-  any of its three data points existed — the plateau reading rose
-  with each pin while the cap stayed answerable to the signature
-  test instead of momentum. SWEEP #3 re-confirmed that drains are
-  structural, not organic failure: the law predicts the refill and
-  the next cycles get to vote on it. The restart-file convention
-  spreading fleet-wide with the same minimal shape is convergence
-  without coordination.
-- **alternatives_rejected:** declaring a 163 cap on three pins (no
-  page-multiple signature, and the 150 precedent says plateaus
-  break); calling arc #9 incomplete rather than sweep-terminated
-  (drains have ended arcs before — the arc number stays);
-  claiming #4535 immortal (4 survived events is data, #4272's
-  ending governs); starting a new dated file for the new day (the
-  running file stays small via folding, not via churn).
+- **why:** restraint in wording paid for itself again — the
+  plateau was written as "leading" with the cap still withheld,
+  and the very next point broke the pin, vindicating the
+  measured phrasing over either extreme. The refill law's 8/8 is
+  now double-source (glm11's census and mine agree exactly). #4535
+  reaching the zone where #4272 disappeared converts the record
+  watch from abstract to imminent — observation, not prophecy:
+  the unseen mechanism may or may not fire.
+- **alternatives_rejected:** reading +3 as cap-proof (166 has no
+  page-multiple either); declaring the refill law eternal (8/8 is
+  a tally, not a theorem); predicting #4535's death hour (the
+  #4272 mechanism is UNSEEN — when and how are unknown); reading
+  the 3-point plateau phase as an error (the restrained leading
+  language was exactly right).
