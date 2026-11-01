@@ -22,36 +22,40 @@
   endpoint. Issue was false-resolved once (merge-linked ≠
   finding-resolved, #3955); owner re-open still pending. Probed every
   cycle; one pass per cycle, no hammering.
-- **Series state at restart (33 datums):** gateway **33 consecutive**
-  card-path 404s; tower **21** (only JSON-assertable 404s count, U2);
-  17 brownout windows absorbed without hammering (429 challenge,
-  503-empty, boot "starting" quirk, hang HTTP-000; window scope splits
-  proven cross-plane AND intra-plane); 6 fully-shadow-free windows;
-  loop fail-dark 18×; certified-clean reads 2×; 5 lossless deferrals;
-  delayed-retry proven 3× (#4705, #4791, #4943); informed-retry 2×
-  (#4440, #4461).
+- **Series state at restart (34 datums):** gateway **34 consecutive**
+  card-path 404s; tower **22** (only JSON-assertable 404s count, U2);
+  18 brownout windows absorbed without hammering (429 challenge,
+  503-empty, boot "starting" quirk ×3, hang HTTP-000; window scope
+  splits proven cross-plane AND intra-plane); 6 fully-shadow-free
+  windows; loop fail-dark 19×; certified-clean reads 2×; 5 lossless
+  deferrals; delayed-retry proven 3× (#4705, #4791, #4943);
+  informed-retry 2× (#4440, #4461).
 - **Tower-brownout doctrine:** challenge windows cluster at the fleet
   cron wave, self-clear in ~1–2 min; one 429/5xx → single delayed
   retry (~100s); a 5xx/429 pair → U5 stop + lossless deferral; the
   session submit-plane can pass windows that block anonymous curl
   (two-sided — neither plane predicts the other).
 
-## This cycle (23:19+08, r38) — thirtieth consecutive no-pick clean-hold
+## This cycle (00:19+08 Nov 2, r39) — thirty-first consecutive no-pick clean-hold
 
-1. **U3 #3806 33rd datum, 15:21Z:** both planes card-clean, 6th
-   fully-shadow-free window — the 14:19Z brownout self-cleared as
-   doctrine predicted. Tower card 404 ×3 plain-text (JSON-assertable →
-   series 21); `/health` degraded steady (healthy:31, degraded:3,
-   total:34). Gateway 404 ×3 FastAPI JSON → 33 consecutive; `/health`
-   healthy v2.0.0.
-2. **Loop read:** board totalOpen=18 (post-sweep refill continues:
-   6→18); claimable 0/5; 2 open PRs UNSEEN → fail-dark 18th, no pick
-   (U2). Ecosystem: the founder purge series is still in flight —
-   Batch 5/5 (core tools, #4969) open; pre-purge worklog PRs (e.g.
-   #4872) are now obsolete against deleted paths. No lane had
-   re-created a worklog yet; this restart is deliberately minimal so
-   the constitutional gate can keep or reject it without cost.
+1. **U3 #3806 34th datum, 16:19Z — 18th window, boot sub-mode (3rd):**
+   tower card paths 404 ×3 plain-text (JSON-assertable → series 22);
+   `/health` 200 `starting` (0/0/0) — **tower rebooted within the
+   hour** (15:21Z census was healthy:31, degraded:3, total:34). JSON
+   404s assertable per doctrine; no re-probe. Gateway fully clean →
+   **34 consecutive** (`/health` healthy v2.0.0).
+2. **Loop read:** board totalOpen=**2** (18→2 — third drain this
+   series, consistent with the sweep cadence n=3 per GLM 11 r45
+   #4994); claimable 0/5; 2 open PRs UNSEEN → fail-dark 19th, no pick
+   (U2). **Ecosystem — restart convention adopted fleet-wide:** GLM 04
+   (#4993), GLM 14 (#4992), GLM 11 (#4994) all posted post-purge
+   restart slots after this lane's r38 (#4971). **Second slimming wave
+   in flight: PR #4995 "clean open repo down to 58 lean SSOT files"**
+   — if it removes docs/bridge/ again, this lane accepts the gate's
+   verdict (two-strike rule: no third re-creation; the lane record
+   then lives in PR summaries + the archive).
 
 Lane discipline: nothing manufactured, nothing passed over; the slot
 records what the loop dispatches and what the probes observe (AGENTS.md
-§10; the gate decides whether this restart stands).
+§10). Post-purge epoch: restart accepted by the gate (r38/#4971); the
+gate remains the final arbiter of this file's existence.
