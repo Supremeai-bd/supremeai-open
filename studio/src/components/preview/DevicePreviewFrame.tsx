@@ -311,10 +311,12 @@ export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
             <div className="w-full h-full relative rounded-xl overflow-hidden bg-slate-950">
               <LiveSandboxRenderer
                 key={refreshKey}
-                htmlContent={htmlCode}
-                onError={setErrors}
-                onElementClick={isInspectorActive ? handleElementSelected : undefined}
-                isInspecting={isInspectorActive}
+                htmlCode={htmlCode}
+                onErrorDetected={(err) => setErrors((prev) => [...prev, err])}
+                onClearErrors={() => setErrors([])}
+                isMobile={deviceMode !== 'desktop'}
+                inspectorActive={isInspectorActive}
+                onElementSelected={isInspectorActive ? handleElementSelected : undefined}
               />
             </div>
           </div>
@@ -323,9 +325,9 @@ export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
         {viewTab === 'diff' && (
           <div className="w-full h-full p-2 overflow-auto">
             <CodeDiffViewer
-              oldCode={snapshots[0]?.html || htmlCode}
+              oldCode={snapshots[0]?.html || snapshots[0]?.files?.['index.html'] || htmlCode}
               newCode={htmlCode}
-              language="html"
+              language={language}
             />
           </div>
         )}

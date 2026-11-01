@@ -844,122 +844,15 @@ def sync_monorepo(
     token: str,
     commit_msg: str,
 ) -> bool:
-    """Sync full umbrella monorepo Supremeai-bd/supremeai."""
-    target_repo = "Supremeai-bd/supremeai"
-    clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_repo = Path(tmp_dir) / "supremeai"
-        print(f"📥 Cloning {target_repo}:main for umbrella sync...")
-        r = subprocess.run(
-            ["git", "clone", "--depth", "1", clone_url, str(tmp_repo)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if r.returncode != 0:
-            err = r.stderr.strip()
-            if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
-                print(f"⚠️ [GRACEFUL-DEGRADATION] Umbrella monorepo {target_repo} cloaked or unauthorized: {err}. Skipping.")
-                return True
-            print(f"❌ Failed to clone {target_repo}: {err}")
-            return False
-
-        # Copy non-excluded root dirs and files
-        for item in repo_root.iterdir():
-            if item.name in MONOREPO_EXCLUDES or item.name.startswith(".git"):
-                continue
-            dst_item = tmp_repo / item.name
-            if item.is_dir():
-                copy_tree_contents(item, dst_item, prune=True)
-            else:
-                shutil.copy2(item, dst_item)
-
-        # Prune legacy VS Code residue in monorepo that migrated to modern extension layout
-        legacy_vscode_paths = [
-            tmp_repo / "vscode" / "src",
-            tmp_repo / "vscode" / "media",
-            tmp_repo / "vscode" / "tsconfig.json",
-            tmp_repo / "vscode" / ".vscodeignore",
-        ]
-        for p in legacy_vscode_paths:
-            if p.is_dir():
-                shutil.rmtree(p, ignore_errors=True)
-                print(f"🧹 Pruned legacy directory in monorepo: {p.relative_to(tmp_repo)}")
-            elif p.is_file():
-                p.unlink(missing_ok=True)
-                print(f"🧹 Pruned legacy file in monorepo: {p.relative_to(tmp_repo)}")
-
-        status = subprocess.check_output(
-            ["git", "status", "--porcelain"],
-            cwd=str(tmp_repo),
-            text=True,
-        ).strip()
-
-        if not status:
-            print(f"✅ [NO-OP] {target_repo} is already in perfect sync.")
-            return True
-
-        print(f"📝 Diff detected in {target_repo}:\n{status}")
-
-        subprocess.check_call(
-            ["git", "config", "user.name", "github-actions[bot]"],
-            cwd=str(tmp_repo),
-        )
-        subprocess.check_call(
-            [
-                "git",
-                "config",
-                "user.email",
-                "github-actions[bot]@users.noreply.github.com",
-            ],
-            cwd=str(tmp_repo),
-        )
-        subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
-        msg = f"sync(open->monorepo): {commit_msg} [skip ci]"
-        res = subprocess.run(
-            ["git", "commit", "--no-verify", "-m", msg],
-            cwd=str(tmp_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode != 0:
-            if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:
-                print(f"⏩ [CLEAN] No new code changes to commit for {target_repo}.")
-                return True
-            print(f"Git commit failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
-            return False
-
-        # Avoid non-fast-forward rejection on concurrent landings (#416).
-        subprocess.run(
-            ["git", "pull", "--rebase", "origin", "main"],
-            cwd=str(tmp_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        print(f"🚀 Pushing umbrella changes to {target_repo}:main...")
-        push_res = subprocess.run(
-            ["git", "push", "origin", "main"],
-            cwd=str(tmp_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if push_res.returncode == 0:
-            print(
-                f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main"
-            )
-            return True
-        else:
-            err = push_res.stderr.strip()
-            if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
-                print(f"⚠️ [GRACEFUL-DEGRADATION] Umbrella push skipped due to permissions: {err}")
-                return True
-            print(f"❌ Failed to push to {target_repo}: {err}")
-            return False
+    """Sync full umbrella monorepo Supremeai-bd/supremeai.
+    DEPRECATED / DECOUPLED: Per federation architecture audit, supremeai-open
+    is a pure public contract/specification repo and must not directly push or
+    copy full-tree content into private umbrella Supremeai-bd/supremeai.
+    Downstream aggregation is delegated to private federation runners consuming
+    landed satellite SHAs.
+    """
+    print("ℹ️ [FEDERATION-DECOUPLED] Direct open->monorepo copy disabled per federation audit architecture. Umbrella aggregates from satellites.")
+    return True
 
 
 def sync_archive(
