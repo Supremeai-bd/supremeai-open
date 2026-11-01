@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use tauri::ipc::Channel;
+use tauri::Manager;
 mod admin;
 use admin::{admin_dashboard, admin_login, admin_logout, admin_verify_totp, AdminSessionState};
 
@@ -221,6 +222,10 @@ async fn send_chat(request: ChatRequest, on_chunk: Channel<String>) -> Result<Ch
 fn main() {
     tauri::Builder::default()
         .manage(AdminSessionState::default())
+        .setup(|app| {
+            admin::load_persisted_session(app.handle(), &app.state::<AdminSessionState>());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             send_chat,
             admin_login,
