@@ -55,6 +55,7 @@ class TestGatewayConfig(unittest.TestCase):
             "deepseek",
             "web",
             "perplexity",
+            "manus",
         }
         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
 
