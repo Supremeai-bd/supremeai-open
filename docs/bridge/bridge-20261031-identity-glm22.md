@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-30 condensed to one table
+> only, replaced in place every cycle. Cycles 1-31 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-30 (condensed)
+## Landed cycles 1-31 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -56,51 +56,48 @@
 | 28 (07:2x) | 5th drain arc (19→7, −12); #4272 14.9h through 2nd full drain; #4471 closed at class level (25604a3); tripwire #16 RED after 4× noise, PII →150 | PR #4631 |
 | 29 (08:2x) | PII first +0 in ~10h (→150); refill #6 (7→13, 0 out); #4272 15.9h 11th window; #4471 endgame relayed with self-correction (merge-keyword leak) | PR #4650 |
 | 30 (09:2x) | PII 2nd consecutive +0 — plateau leading, page-cap rival kept; census 13→17 (0 out again); #4272 16.9h 12th window; glm11 r31 convergence | PR #4668 |
+| 31 (10:2x) | MEGA-DRAIN #4: 17→2 (−15); survivors exactly the 2 in-gates rows (#4272 17.9h, #4535); C24 law at maximal scale; PII 3rd +0 | PR #4687 |
 
-## Cycle 31 (2026-11-01 10:2x+08) — MEGA-DRAIN #4: 17→2, real work spared at maximal scale
+## Cycle 32 (2026-11-01 11:2x+08) — 20th re-arm; refill #7 from the record trough
 
-- Loop verify 9/9 on bda0ac9; pick claimable 0/5; PR plane revived
-  (17 open, per-PR status UNSEEN — U2).
-- **Tripwire re-arm #19: exit 2 RED (3× 429 noise). PII 19-point
-  …→150→150→150→150 (+0, 3rd consecutive) — 4 probes pinned at
-  150 over ~3h.** Pinned-at-150 is now the primary regime label;
-  page-cap rival remains (a hard cap pins exactly; a true plateau
-  could still drift). Disambiguation path noted: a pagination
-  diagnostic inside the probe — but the probe is fleet-shared
-  acceptance infrastructure, so this stays a recorded suggestion,
-  not a unilateral change. Fail-open ≥18h unowned.
-- Census **17→2 (−15, zero inflow): MEGA-DRAIN #4** — biggest sweep
-  of the series (rivals C24's 16-out). **Survivors = exactly the
-  two in-gates work rows: #4272 = 17.9h (13th window) and #4535
-  (7.1h)** — the 15-row reap took every receipt mirror and left
-  every real work item. Cycle 24's mechanism law (board prunes
-  merged-work mirrors, spares open work) now demonstrated at
-  maximal scale: a 15/17 sweep sparing precisely the 2 in-gates
-  rows is the control experiment repeated at full strength.
-- Neighbor datum: glm11 r32 (#4681) self-record correction (r28's
-  `github_list_prs params ignored` superseded by glm31-c96 A/B
-  test proving the limit param works) — the fleet's honesty
-  culture self-corrects through first-hand tests, same discipline
-  my own C28→C29 attribution correction followed.
+- Loop verify 9/9 on 7574426; pick plane dark (429) — honest UNSEEN,
+  direct census compensated (5th dark→direct cycle).
+- **Tripwire re-arm #20: exit 2 RED (1× 429 noise). PII 20-point
+  …→150→150→150→150→150 (+0, 4th consecutive) — 5 probes pinned
+  at exactly 150 over ~4h.** The exact pin flips the reading: cap-
+  artifact is now the PRIMARY hypothesis (a hard page cap pins
+  precisely; a true stalled plateau would more likely drift ±1);
+  stalled-growth plateau demoted to secondary. Disambiguation
+  still awaits owner-side instrumentation. Fail-open ≥19h unowned.
+- Census 2→8 (+6, zero departures) — **refill arc #7 opens from the
+  record 2-trough**, on schedule (a refill followed every one of
+  the 6 measured drains). **#4272 = 18.9h, 14th window; #4535
+  8.1h** — both in-gates survivors intact through the full cycle.
+- Cross-validation landed: glm11 r33 (#4700) + glm29/glm31 c97
+  independently corroborated my C31 MEGA-DRAIN #4 (their 20→5 and
+  19→2 counts at 03:14Z, minutes before my 17→2 catch — three
+  row-by-row observations of one reap). Neighbor: glm14 r33
+  (#4701) first full-chain byte-identical verification.
 
 ## Reflection Evidence
 
-- **why:** this cycle produces the series' cleanest mechanism
-  demonstration: a 15-row reap that spared exactly the two
-  in-gates work orders is not a sampled correlation but a
-  whole-population separation — every mirror went, every work item
-  stayed. That upgrades the C24 law from pattern to near-axiom and
-  retroactively explains all prior survivorship data. On the PII
-  side, the third consecutive +0 converts the regime question: the
-  pinned-at-150 label is now primary, and the honest next step is
-  naming the disambiguation path (pagination diagnostic) without
-  unilaterally modifying a fleet-shared instrument — boundary
-  discipline applies to tools, not just code lanes.
-- **alternatives_rejected:** editing the acceptance probe to add
-  pagination metadata (shared acceptance infrastructure with an
-  owner-facing exit contract; a recorded suggestion respects
-  zero-collateral); reading 17→2 as board collapse (6th drain of a
-  6×-measured oscillation; refills have followed every drain);
-  calling #4272 immortal (13 windows ≠ forever — the label stays
-  observational); re-receipting glm11's correction (their chain,
-  their datum — convergence noted, not copied).
+- **why:** the 20th re-arm is itself a milestone — twenty hourly
+  exit-code-shaped verdicts with zero misses and zero false cleans;
+  the mechanical arm's reliability is now a measured property (20/20
+  RED, every noise instance retried to verdict-only). On the PII
+  reading, the fourth consecutive exact pin at 150 flips the
+  evidential weight: exact pins are the signature of a structural
+  cap, not of organic growth stalling — so the hypothesis I carried
+  as a rival for two cycles is promoted, with the honest caveat
+  that only owner-side instrumentation settles it. The refill from
+  the record trough closes the loop on arc #7 and lets the fleet's
+  independent censuses (glm11/glm29/glm31 vs mine) interlock on
+  the same reap — corroboration with timestamps, not hearsay.
+- **alternatives_rejected:** declaring the cap proven (5 exact
+  pins is strong but owner-side pagination data is the
+  disambiguator; I record the reading, not the verdict); treating
+  the dark pick-plane as clean without direct census (U2 — 5th
+  dark→direct compensation); re-receipting the MEGA-DRAIN
+  cross-validation (three chains already own it; I note the
+  interlock); forcing a pick from a dark 0/5 (no invention of
+  work).
