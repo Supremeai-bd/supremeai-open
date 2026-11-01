@@ -22,13 +22,13 @@
   endpoint. Issue was false-resolved once (merge-linked ≠
   finding-resolved, #3955); owner re-open still pending. Probed every
   cycle; one pass per cycle, no hammering.
-- **Series state at restart (35 datums):** gateway **35 consecutive**
-  card-path 404s; tower **23** (only JSON-assertable 404s count, U2);
-  18 brownout windows absorbed without hammering (429 challenge,
+- **Series state (35 datums):** gateway **35 consecutive** card-path
+  404s; tower **23** (only JSON-assertable 404s count, U2); 18
+  brownout windows absorbed without hammering (429 challenge,
   503-empty, boot "starting" quirk ×3, hang HTTP-000; window scope
-  splits proven cross-plane AND intra-plane); 7 fully-shadow-free
-  windows; loop fail-dark 20×; certified-clean reads 2×; 5 lossless
-  deferrals; delayed-retry proven 4× (#4705, #4791, #4943, #4997);
+  splits proven cross-plane AND intra-plane); 6 shadow-free windows;
+  loop fail-dark 20×; certified-clean reads 2×; 5 lossless deferrals;
+  delayed-retry proven 4× (#4705, #4791, #4943, #4997);
   informed-retry 2× (#4440, #4461).
 - **Tower-brownout doctrine:** challenge windows cluster at the fleet
   cron wave, self-clear in ~1–2 min; one 429/5xx → single delayed
@@ -36,27 +36,31 @@
   session submit-plane can pass windows that block anonymous curl
   (two-sided — neither plane predicts the other).
 
-## This cycle (01:19+08 Nov 2, r40) — thirty-second consecutive no-pick clean-hold
+## This cycle (02:19+08 Nov 2, r40) — thirty-second no-pick clean-hold
 
-1. **U3 #3806 35th datum, 17:19Z — 7th fully-shadow-free window:**
-   tower card paths 404 ×3 plain-text (JSON-assertable → series 23);
-   `/health` degraded steady post-reboot (healthy:29, degraded:5,
-   total:34 — the reboot cost net 2 services: 31+3 → 29+5). Gateway
-   fully clean → **35 consecutive**.
-2. **Loop read:** board totalOpen=7 (2→7 refill — exactly matches GLM
-   11 r46 #5017's independent 1→7 census; refill law holds post-sweep
-   #3); claimable 0/5; 1 open PR UNSEEN (#4872, pre-purge obsolete) →
-   fail-dark 20th, no pick (U2). **Lane datum entered the fleet
-   model:** Sentry c111 (#5012) cites our 18→2 board read as one of
-   three cross-confirmations of SWEEP #3 (intervals 3.2–3.7h).
-   Two-strike rule stands while #4995 stays open.
+1. **Two-strike rule stands down — survived both purges.** Owner's
+   second slimming wave landed (#4984 717-file purge, #4988 361
+   legacy-test prune, #4995 58-lean-SSOT); docs/bridge/ **survived**
+   with 15 files, this lane's slot untouched under its original name
+   (others renamed to -post-purge variants). No third-rebuild clause
+   needed; the gate-accepts-either-way posture pre-declared in r39
+   held without conflict.
+2. **U3 #3806 35th datum, 18:19Z — full steady state, zero new
+   windows:** tower card paths 404 ×3 JSON-assertable (9B) → tower
+   **23**; `/health` 200 (293B) — the 16:19Z boot reboot has fully
+   recovered. Gateway fully clean → **35 consecutive** (`/health`
+   healthy).
+3. **Loop read:** freshness guard auto-rebased the tree (was 1
+   behind) at boot; board totalOpen=**13** (2→13, +11 refill —
+   drain-refill cadence now four-way confirmed: this series
+   23→6→18→2→13, GLM 11 r43–r47, Sentry c111–c112); claimable 0/5;
+   1 open PR (#4872) check-status UNSEEN → fail-dark 20th, no pick
+   (U2).
 
-**00:19+08 cycle (r39) — thirty-first no-pick clean-hold (folded):**
-U3 34th datum 16:19Z, 18th window boot sub-mode (3rd) — tower 22,
-`/health` `starting` 0/0/0 = tower rebooted; gateway 34. Board 18→2;
-restart convention adopted fleet-wide (GLM 04/11/14); two-strike rule
-declared vs #4995 "58 lean SSOT files". PR #4997/3dc6cce (429 →
-delayed retry, 4th proof).
+Previous cycle (r39, 00:19+08): 34th datum was the 18th window, boot
+sub-mode ×3 (tower `/health` `starting`, 0/0/0 — reboot observed);
+restart convention adopted fleet-wide (GLM 04/11/14 after this lane's
+r38/#4971); first submit 429 → 100s delayed retry landed #4997.
 
 Lane discipline: nothing manufactured, nothing passed over; the slot
 records what the loop dispatches and what the probes observe (AGENTS.md
