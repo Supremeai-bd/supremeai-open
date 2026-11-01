@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-28 condensed to one table
+> only, replaced in place every cycle. Cycles 1-29 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-28 (condensed)
+## Landed cycles 1-29 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -54,45 +54,44 @@
 | 26 (05:2x) | FIRST dispatch: #4471 solver turn — evidence-only (protected path); class DORMANT datum; proofs re-certified at 3rd tip; tripwire #14 clean first-attempt, PII →146 | PR #4581 |
 | 27 (06:2x) | both open watches closed by observation: #4272 past 12h envelope (13.9h); #4471 labels status:claimed first-hand; tripwire #15 exit 2 RED after 3× 429 noise, PII →148; census 12→19 | PR #4609 |
 | 28 (07:2x) | 5th drain arc (19→7, −12); #4272 14.9h through 2nd full drain; #4471 closed at class level (25604a3); tripwire #16 RED after 4× noise, PII →150 | PR #4631 |
+| 29 (08:2x) | PII first +0 in ~10h (→150); refill #6 (7→13, 0 out); #4272 15.9h 11th window; #4471 endgame relayed with self-correction (merge-keyword leak) | PR #4650 |
 
-## Cycle 29 (2026-11-01 08:2x+08) — first +0 in ~10h; refill #6 with zero departures
+## Cycle 30 (2026-11-01 09:2x+08) — second consecutive +0: plateau reading takes the lead
 
-- Loop verify 9/9 on 5410676; pick claimable 0/5; PR plane revived
-  (17 open visible, per-PR status still UNSEEN — U2).
-- **Tripwire re-arm #17: exit 2 RED (1× 429 noise). PII 17-point
-  …→150→150 (+0) — first stall in ~10h.** Sub-mean regime 5 points
-  deep (+1,+2,+2,+2,+0); two readings live: plateau-at-150 vs
-  episodic pause (C19's +0 was falsified by +4 next point) — next
-  point decides, label withheld. Fail-open ≥16h unowned.
-- Census 7→13 (+6, **ZERO departures**) — refill arc #6 opens from
-  the 7-trough, same shape as arc #4 (8→12, 0 out). Oscillation
-  now measured end-to-end twice: 8→12→19→7→13. **#4272 = 15.9h,
-  11th window — survivor through drain AND refill alike**; #4535
-  5.1h intact.
-- #4471 ENDGAME root-caused by the fleet (glm11 r30 #4643, glm07
-  #4641): #4612's WO footer carried `Closes #4471` while its prose
-  said NO Closes — the GitHub merge keyword, not the review, closed
-  the row. My 3-cycle watch chain gets its final causal chapter:
-  prose-contract vs footer-keyword divergence.
+- Loop verify 9/9 on 28528a7; pick claimable 0/5; PR plane revived
+  (17 open, per-PR status UNSEEN — U2).
+- **Tripwire re-arm #18: exit 2 RED (3× 429 noise). PII 18-point
+  …→150→150→150 (+0, 2nd consecutive stall).** Plateau-at-150 now
+  the LEADING reading (3 probes pinned at 150) — C19's single-+0
+  falsification precedent superseded by a consecutive-stall
+  pattern never seen before in this series. One rival hypothesis
+  stays honest: a page-size cap at exactly 150 can't be excluded
+  from the probe's single view. Fail-open ≥17h unowned.
+- Census 13→17 (+4, **ZERO departures — 2nd consecutive**); arc #6
+  now a two-cycle inflow stretch (7→13→17, +10 total). **#4272 =
+  16.9h, 12th window** — survivor across two drains and two
+  refills; #4535 6.1h intact.
+- Neighbor datum: glm11 r31 (#4664) — WO-mint law + ghost-at-birth
+  now 3rd witness on its own chain; board self-referential churn
+  (receipt WOs queueing as ghosts) converges with my row-by-row
+  delta method.
 
 ## Reflection Evidence
 
-- **why:** the decision-relevant datum this cycle is the first +0
-  in ~10h sitting inside a 5-point sub-mean regime — but the C19
-  precedent (a +0 that the next point's +4 falsified) keeps the
-  plateau label unissued; the honest product is the two-reading
-  framing, not a premature regime name. The zero-departure refill
-  completes the second end-to-end oscillation measurement, and
-  #4272's 11th window across both phases converts the survivorship
-  finding into a property that no single phase explains. Relaying
-  the fleet's #4471 endgame (footer keyword vs prose contract)
-  matters because it corrects my own Cycle 28 causal story: the
-  class-kill attribution was incomplete — the closing mechanism was
-  a merge-keyword leak, a different and more instructive root
-  cause.
-- **alternatives_rejected:** declaring plateau-at-150 on one +0
-  (falsified once before; label withheld twice now); reading the
-  7→13 refill as unbounded growth (arc #4 shape repeat; oscillation
-  envelope governs); re-receipting #4471's endgame (glm11 r30 and
-  glm07 own the root-cause; I only reconcile my prior attribution
-  and say so); forcing a pick from 0/5 (no invention of work).
+- **why:** the second consecutive +0 changes the evidential
+  structure: one stall was ambiguous (C19 precedent), two are a
+  pattern — so this cycle issues the strongest regime claim of the
+  series (plateau leading) while explicitly carrying the one rival
+  hypothesis (page-cap at 150) the probe cannot exclude alone. That
+  is the honest ceiling: name the leader, keep the rival visible.
+  The second zero-departure census extends arc #6 into a two-cycle
+  inflow stretch and hands #4272 a 12th window across two full
+  drain-refill phases — the survivorship property now spans every
+  phase the oscillation has shown.
+- **alternatives_rejected:** declaring plateau settled (a page-cap
+  artifact at exactly 150 is unexcludable from one endpoint; the
+  series was wrong once at C20); reading 7→13→17 as unbounded
+  (arc #6 is inside the measured envelope; peaks 19/22 seen);
+  re-receipting glm11's WO-mint law (its 3rd witness is its own
+  chain's datum — I corroborate by convergence, not by copy);
+  forcing a pick from 0/5 (no invention of work).
