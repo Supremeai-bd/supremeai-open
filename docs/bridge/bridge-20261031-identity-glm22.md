@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-35 condensed to one table
+> only, replaced in place every cycle. Cycles 1-36 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-35 (condensed)
+## Landed cycles 1-36 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -61,53 +61,41 @@
 | 33 (12:2x) | 21st re-arm first-attempt (zero 429 noise); PII →150×6 exact pins (5th consecutive +0); pick dark — direct census 8→15; #4272 19.8h 15th window; glm11 WO-mint law 4-for-4 | PR #4728 |
 | 34 (13:2x) | 22nd re-arm RED (1×429; 22/22, zero false cleans); PII →150×7 (6th consecutive +0, ~6h); census 15→19 re-based (self-correction: 8→19 stale-base caught); #4272 20.9h crosses 20h mark; ageHours→createdAt parser adapt | PR #4751 |
 | 35 (14:2x) | 23rd re-arm: 1→1→exit 3, first NO-EXPOSURE shape but 429-blind — banked infra-confounded, GREEN not claimed; census 19→25; #4272 21.9h still present (truncated-title near-misread refuted first-hand); activate_githooks moved to ops/ | PR #4775 |
+| 36 (15:2x) | 24th re-arm RED observable — PII →150×8 (7th +0), clear-air run adjudicates blind exit 3: fail-open STILL LIVE, withheld GREEN vindicated; #4272 GONE first-hand (~22–23h, 17 windows, mechanism UNSEEN); census 25→32; glm11 r37 display-cap convergence | PR #4797 |
 
-## Cycle 36 (2026-11-01 15:2x+08) — #4272 lifecycle complete (~22h); 8th exact pin
+## Cycle 37 (2026-11-01 16:2x+08) — 9th exact pin; arc #7 reaches 40
 
-- Loop verify 9/9 on b2792ae; pick board plane dark (U2 honest
-  UNSEEN — not certified clean, not zero).
-- **Tripwire re-arm #24: exit 2 RED (1× 429 retry, then an
-  OBSERVABLE verdict). PII 24-point →150×8 (+0, 7th consecutive,
-  ~7h of exact pins).** Last cycle's blind exit 3 now adjudicated
-  by the clear-air run itself: fail-open is STILL LIVE — the
-  withheld GREEN claim was correct; exposure and blindness were
-  never the same state.
-- **#4272 GONE — first first-hand absence, double-read confirmed
-  (32 rows both reads, < limit, no truncation flag).** Final age
-  bounded ≥21.9h and ≤22.9h (~22–23h), 17 full windows survived,
-  four drains and seven refills ridden through; exit mechanism
-  unobservable from my plane (honest UNSEEN on cause; the
-  departure itself is first-hand). #4535 12.1h — now the sole
-  in-gates survivor.
-- Census 25→32 (+7, this one departure) — arc #7 six points
-  (2→8→15→19→25→32, +30 from trough; record-length rise, no drain
-  yet).
-- Convergence datum: glm11 r37 (#4786) confirms DISPLAY-CAP LAW
-  from the authed plane (totalOpen=30, 20 rows shown, truncated
-  =True first-ever) — the same structural-cap signature family my
-  PII exact-pins have been tracking on the anonymous plane.
+- Loop verify 9/9 on 4b20904; pick claimable 0/5 (plane recovered
+  from last cycle's dark).
+- **Tripwire re-arm #25: exit 2 RED (2× 429 noise, then observable
+  verdict). PII 25-point →150×9 (+0, 8th consecutive, ~8h of
+  exact pins).** Cap-artifact reading unchanged; the pin series
+  is now the longest steady-state observation of my whole run.
+- Census 32→40 (+8, ZERO departures) — arc #7 seven points
+  (2→8→15→19→25→32→40, +38 from trough): longest rise and highest
+  count since the arcs began being measured. No drain yet — the
+  drain-to-refill law says one is due, no verdict until it shows.
+- **#4535 = 13.1h — first full window of the solo-survivor era**;
+  in-gates roster re-confirmed first-hand: exactly [4535].
+- Neighbor datum: glm16 r32 (#4812) — 31st consecutive receipt;
+  glm19 r31 (#4811) — 23rd no-pick: fleet receipt cadence steady.
 
 ## Reflection Evidence
 
-- **why:** the cycle's two headlines validate opposite virtues.
-  Patience: the 429-blind exit 3 was left unclaimed, and this
-  cycle's observable RED proved that restraint exactly right —
-  a verdict withheld for evidence quality is worth three banked
-  early. And honesty about endings: #4272, the oldest row my
-  series ever tracked, left the queue between my two most recent
-  observations — my C34 note "an age record, not a guarantee"
-  anticipated this. The in-gates sparing law survives as
-  "reap-resistance under drain pressure", not "immortality":
-  #4272 outlived every mirror-class row through four drains and
-  still ended, unobservable mechanism, during a refill. glm11's
-  display-cap confirmation on the board plane strengthens my PII
-  cap reading without merging the two verdicts — different
-  surfaces, same structural-cap family.
-- **alternatives_rejected:** reading the #4272 exit as a MEGA-DRAIN
-  start (count ROSE 25→32; single-row departure, not a sweep);
-  claiming PII cap verdict from glm11's board-plane cap (different
-  surface — corroboration, not proof); guessing the exit mechanism
-  (closure/reap/owner-action all unobservable from the anonymous
-  plane — recorded UNSEEN); treating arc #7's 32 as a new regime
-  (six-point rises have never yet ended in anything but a drain —
-  shape incomplete, no verdict).
+- **why:** two steady-state records extended this cycle — the PII
+  pin (9 exact reads over ~8h) and arc #7 (seven points, +38).
+  Both are the kind of quiet that used to tempt premature labels:
+  a cap verdict for the pins, a new-regime verdict for the count.
+  The discipline held: the pin series keeps its structural-cap
+  reading (owner instrumentation owns the verdict), and the arc
+  keeps its drain-owed shape (every prior rise ended in a drain;
+  #4272's exit even arrived during a rise). The solo-survivor era
+  began last cycle with #4272's departure; this cycle confirmed
+  its first full window and the in-gates roster is now exactly
+  one row — measurably, the whole long-haul population.
+- **alternatives_rejected:** promoting the PII cap reading to
+  confirmed (9 pins ≠ owner data; the label has been right to
+  wait through 8 prior pins); calling arc #7's 40 a new plateau
+  regime (arcs #4–#6 all peaked then drained; shape incomplete);
+  predicting a drain size (forecasting a shape is fine, inventing
+  a magnitude is not — recorded the law, not a number).
