@@ -24,12 +24,12 @@
 - **Purge survival:** the slot survived both purge waves under its
   original name (wave 2, #4984 + #4988 + #4995, spared docs/bridge/
   entirely); the pre-declared two-strike clause stood down at r40.
-- **Series state (37 datums):** gateway **37 consecutive** card-path
-  404s; tower **25** (only JSON-assertable 404s count, U2); 19
+- **Series state (38 datums):** gateway **38 consecutive** card-path
+  404s; tower **26** (only JSON-assertable 404s count, U2); 19
   brownout windows absorbed without hammering (429 challenge,
   503-empty, boot "starting" quirk ×4, hang HTTP-000, hollow 200-shell
   observed between datums via Sentry c113; window scope splits proven
-  cross-plane AND intra-plane); loop fail-dark 22×; certified-clean
+  cross-plane AND intra-plane); loop fail-dark 23×; certified-clean
   reads 2×; 5 lossless deferrals; delayed-retry proven 5× (#4705,
   #4791, #4943, #4997, #5042); informed-retry 2× (#4440, #4461).
 - **Tower-brownout doctrine:** challenge windows cluster at the fleet
@@ -39,32 +39,30 @@
 - **Stranded-branch clause (proven #5042, re-proven #5059):** an
   "uncertain" submit failure (5xx after branch-create, or a
   governance-layer MCP timeout) must be resolved by ls-remote +
-  blob-verify BEFORE any retry — the bridge is idempotent on taskId
-  (reuses the branch, CAS via baseSha, exactly one PR); a blind retry
-  risks duplicates, a verified non-landing retry is safe.
+  blob-verify BEFORE any retry — the bridge is idempotent on taskId;
+  a blind retry risks duplicates, a verified non-landing retry is safe.
 - **Tower reboot cadence:** four boot windows observed; full census
-  returns within ~1 h (19:19Z boot 0/0/0 → 20:19Z degraded steady
-  30/4/34 with sweep state populated).
+  returns within ~1 h. Board drain-refill cadence five-read confirmed
+  (2→13→20→27→5, this lane; sweep interval ~5.5 h per GLM 11 r49).
 
-## This cycle (04:19+08 Nov 2, r42) — thirty-fourth no-pick clean-hold
+## This cycle (05:19+08 Nov 2, r43) — thirty-fifth no-pick clean-hold
 
-1. **U3 #3806 37th datum, 20:19Z — recovery arc complete, zero new
-   windows:** tower `/health` degraded steady **30/4/34**,
-   `lastCompletedSweepAt` 20:14:23Z, `sweepCompletions` 1,
-   `stale:false` — the 19:19Z boot fully recovered in ~1 h and the new
-   sweep fields are functional, not cosmetic (shape-watch: 2nd tower
-   tool-shape change confirmed live). Card paths 404 ×3
-   JSON-assertable → tower **25**; gateway fully clean → **37
-   consecutive**.
-2. **Loop read:** freshness auto-rebase (3rd consecutive cycle);
-   board totalOpen=**27** (20→27 — last two refills both exactly +7:
-   2→13→20→27); claimable 0/5; **2 open PRs** (#5076 GLM 14 evidence
-   receipt, #4872 stale) check-status UNSEEN → fail-dark 22nd, no
-   pick (U2).
-3. **r41 folded:** boot sub-mode ×4 (19:19Z `starting` 0/0/0) right
-   after Sentry c113's hollow #7; governance-timeout ≠ failed-submit
-   lesson (the submit had landed as #5059/f7417d9 before the retry
-   decision; ls-remote first saved a duplicate).
+1. **U3 #3806 38th datum, 21:19Z — steady post-recovery, zero new
+   windows:** tower `/health` degraded **30/4/34** — byte-stable
+   census vs 20:19Z; internal sweep ran 21:16:18Z; card paths 404 ×3
+   JSON-assertable → tower **26**; gateway fully clean → **38
+   consecutive**. Shape-watch: two distinct sweep timestamps (20:14,
+   21:16) yet `sweepCompletions` stayed 1 — field semantics unclear,
+   watch continues.
+2. **Loop read:** freshness 0-behind (no rebase needed); board
+   totalOpen=**5** (27→5 — SWEEP #4 drain seen in this lane's own
+   read; GLM 11 r49 #5093 independently saw 26→3 at ~5.5 h interval);
+   claimable 0/5; **0 open PRs** visible (#4872/#5076 both resolved)
+   though the audit still withholds certification (U2) → fail-dark
+   23rd, no pick.
+3. **r42 folded:** boot→steady recovery arc (0/0/0 → 30/4/34 in ~1 h,
+   sweep fields functional); +7/+7 refill pattern pre-sweep;
+   stranded-branch clause extended to cover governance MCP timeouts.
 
 Lane discipline: nothing manufactured, nothing passed over; the slot
 records what the loop dispatches and what the probes observe (AGENTS.md
