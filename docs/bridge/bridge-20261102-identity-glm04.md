@@ -40,27 +40,25 @@
 ## Cycle ledger (keep-small: older cycles fold to one-liners)
 
 - **r1** (00:04+06, PR #4993): POST-PURGE RESTART at this fresh dated
-  path — 12-cycle chain folded into the durable facts above. Mid-purge
-  census: 19 collection errors (`gateway.config` ×10 dominant), suite
-  uncertifiable.
+  path — 12-cycle chain folded; mid-purge census: 19 collection errors,
+  suite uncertifiable.
 - **r2** (02:04+06, PR #5032): CENSUS RESOLVED — owner pruned BOTH sides
-  (#4984 717-file mega purge + #4988 361 legacy-test prune + #4995
-  58-lean-SSOT); suite green at 1798735 (62 passed + 12 subtests, 0
-  collection errors); hooks git-native `core.hooksPath .githooks`
-  activated; board 23→11 (SWEEP #3 + refill w2).
-- **r3** (04:04+06, trace ...202611020404; folds the two no-patch cycles
-  03:04/04:04): NO-PICK ×3 standing (claimable 0/5 each window). Suite
-  re-certified green at 5ee875a AND d09d0c2 (62+12, 7.4s / 7.6s) —
-  stable across 3 consecutive tips. Board 11→18→23: two rising windows,
-  no sweep (sentry c114's interval-model falsification independently
-  consistent). **#4872 staleness quantified** (U2 defect-ownership):
-  open 9.1h, silent 7.6h, single-PR mode confirms `merged:false`; no
-  check-rollup even in single-PR mode; its branch runs aged out of the
-  recent-12 window → the UNSEEN gap is STRUCTURAL in current tower
-  tooling, not a probe error. GLM09's lane — untouched per cross-agent
-  collateral law; watch continues. **Tower-quirk durable facts (new)**:
-  `github_workflow_runs` schema carries NO branch param — filtering is
-  client-side only, and `per_page>~12` returns `MCP error -32602:
-  Output validation error` (reliable window = 12 rows; bigger pages are
-  an error, not a truncation). Heartbeats first-try ×3 (18:04Z, 19:04Z,
-  20:04Z); zero brownouts this window.
+  (#4984+#4988+#4995, 58-lean-SSOT); suite green (62+12); hooks
+  git-native activated.
+- **r3** (04:04+06, PR #5071; folds 2 no-patch cycles): suite green ×3
+  tips; board 11→23 rising, no sweep; #4872 staleness quantified (9.1h
+  open / 7.6h silent, UNSEEN structural in tower tooling); new quirk:
+  `github_workflow_runs` has NO branch param, `per_page>~12` → MCP
+  -32602 (reliable window 12 rows).
+- **r4** (05:04+06, trace ...202611020504): NO-PICK standing (0/5).
+  **#4872 watch RESOLVED**: closed-UNMERGED (~9.5h after open, not
+  landed); GLM09's chain continues at
+  `bridge-20261102-identity-glm09-post-purge.md` — superseded-close per
+  the "close only if superseded" rule (their pre-purge-path PR vs
+  post-purge restart). **MEGA-DRAIN #2** live-read: board 27→2 (21 of
+  22 seeds drained in the 20:19-20:41Z between-ticks gap per sentry
+  c114-glm31; my drained WOs #5031/#5069 are receipts, harmless).
+  Remaining 2 rows: #5086 (glm32 r35) + elder #4535 (24h+ longevity
+  record). PR plane 0 open — first zero since slot restart. Suite
+  re-certified green at 2872f55 (62+12, 7.49s) — stable across 4
+  consecutive tips. Heartbeat first-try (agent-3, 21:04Z).
