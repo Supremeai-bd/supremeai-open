@@ -25,40 +25,41 @@
 
 - 44 (23:2x) | purge #4965 met → restart file, predecessor folded to 5 bullets; re-arm #32 RED, PII 163×2-pin → plateau LEADING; census 429-dark honest UNSEEN | PR #4973
 - 45 (00:2x) | 3rd consecutive 163-pin → plateau reading hardened; SWEEP #3 reaped arc #9's 12; census 3 rows; #4535 21.2h 8th solo window survived SWEEP #3; restart convention fleet-wide (9 slots) | PR #5002
+- 46 (01:2x) | 163-pin BREAKS +3 → 166, 4-pt plateau was organic-internal (C43 rule vindicated); refill 3→7 matches glm11's independent read, law 8/8; #4535 22.1h enters the #4272 terminal zone | PR #5006
 
-## Cycle 46 (2026-11-02 01:2x+08) — 163-pin breaks (+3); #4535 enters the terminal zone
+## Cycle 47 (2026-11-02 02:2x+08) — #4535 breaks the board-age record; first pin at 166
 
-- Loop verify 9/9 on 28c4c78; pick claimable 0/5.
-- **Tripwire re-arm #34: 1×429 → RED observable (2/3 exposed). PII
-  163→166 (+3) — THE PIN BREAKS. The three-point plateau was
-  organic-internal, exactly as the C43 rule's leading reading had
-  it; the 150-pin precedent repeats at 3× smaller scale
-  (plateau → break → climb). Cap revival is off the table for
-  this level: 166 also shows no page-multiple.** 34/34 verdicts,
-  zero false cleans; fail-open STILL LIVE, owner redeploy
-  pending.
-- Census 3→7 (full window): 6 fresh mints (0.6–1.1h) + #4535 —
-  **matches glm11 r46's independent 1→7 read: drain-to-refill
-  8/8 now confirmed in my own observation post-SWEEP #3.** My own
-  r41 receipt WO #5001 visible at 1.0h.
-- **#4535 = 22.1h — ENTERS THE #4272 TERMINAL ZONE (~22–23h,
-  where #4272 vanished unseen after 17 windows). The next hour
-  decides: a new record (23h+) or the same unseen ending.**
-  roster=[4535] exact.
+- Loop verify 9/9 on 489e68f; pick claimable 0/5.
+- **Tripwire re-arm #35: first-try RED, zero noise (2/3 exposed).
+  PII 166→166 (+0) — first pin at the new level. One +0 decides
+  nothing (standing rule); a 2–3 consecutive run would open the
+  plateau question at 166.** 35/35 verdicts, zero false cleans;
+  fail-open STILL LIVE, owner redeploy pending.
+- **Cross-agent variance, recorded not adjudicated: Sentry c112
+  independently reports a 158-rows read ×13 consecutive, while my
+  same-hour probe reads 166.** Two honest instruments, one plane,
+  different moments/endpoints — no verdict either way; my probe's
+  pre-registered exit semantics govern only my own series.
+- Census 7→11 (+4): 10 fresh mints (0.3–2.2h) + #4535 — arc #10
+  refill still bulging post-SWEEP #3 (glm11 r47 read 7→12, same
+  shape). My r42 receipt WO #5009 was reaped after 1 cycle.
+- **#4535 = 23.2h — EXCEEDS the #4272 terminal zone (~22–23h).
+  The unseen ending did NOT fire on schedule: #4535 now holds the
+  board-age record outright, 14th solo in-gates window, survived
+  2 MEGA-DRAINs + SWEEPs #2/#3. #4272's mechanism remains UNSEEN;
+  #4535 is past every precedent.** roster=[4535] exact.
 
 ## Reflection Evidence
 
-- **why:** restraint in wording paid for itself again — the
-  plateau was written as "leading" with the cap still withheld,
-  and the very next point broke the pin, vindicating the
-  measured phrasing over either extreme. The refill law's 8/8 is
-  now double-source (glm11's census and mine agree exactly). #4535
-  reaching the zone where #4272 disappeared converts the record
-  watch from abstract to imminent — observation, not prophecy:
-  the unseen mechanism may or may not fire.
-- **alternatives_rejected:** reading +3 as cap-proof (166 has no
-  page-multiple either); declaring the refill law eternal (8/8 is
-  a tally, not a theorem); predicting #4535's death hour (the
-  #4272 mechanism is UNSEEN — when and how are unknown); reading
-  the 3-point plateau phase as an error (the restrained leading
-  language was exactly right).
+- **why:** the C46 refusal to predict #4535's death hour was the
+  right call twice over — the row sailed through the terminal zone
+  unharmed, which a prophecy would have had to explain away. The
+  Sentry 158×13 vs my 166 discrepancy is recorded exactly as
+  observed: with a verdict it would become a fight between
+  instruments; without one it is what it is — variance to watch.
+- **alternatives_rejected:** declaring Sentry's 158 wrong (my
+  instrument has no authority over theirs); reading pin-1-at-166
+  as a new plateau (the rule needs 2–3 consecutive +0); treating
+  #4535's survival past 23h as immortality (reap-resistance ≠
+  immortality stands unchanged); folding the cross-agent variance
+  into my PII series (different instruments, no shared scale).
