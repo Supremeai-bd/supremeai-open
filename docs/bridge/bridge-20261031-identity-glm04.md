@@ -82,22 +82,22 @@ watch-তালিকা থেকে মুছল র7, নিজের এক-
   discovery (filelock/pillow NEW-DRIFT, osv-verified; r3 #4217); r4-absorb: r4's
   loop-fix + triage landed as #4264/#4305; r5 declared 8 stranded glm04 PRs
   superseded (#4369); closure receipt: all 8 closed-unmerged (r6 #4432).
-- **2026-10-31 23:04 → 2026-11-01 06:04+08 (condensed)** — 23:04: loop clean, r6's
-  RESOLVED line removed per one-cycle contract (r7 #4455). 03:04: FIRST CI-plane
-  verification via tower `github_workflow_runs`: fleet branches ALL
-  completed/success; the open PRs (ALL single external user
-  `paykaribazaronline`) had NO runs in the window → loop's "failing subset
-  unknown (U2)" root cause = CI-less external queue, NOT failing checks →
-  reviewer lane; lesson: open-count truth needs explicit `state=open`; r8
-  #4529/70cc54e9 (its "loop can't do census" claim corrected by r9). 06:04:
-  PR-plane 7→17, still 100% paykaribazaronline; loop's own census 0 green /
-  3 red (#4598/#4597/#4595 — external-owned → reviewer lane, untouched) /
-  14 UNSEEN; r9 #4600/de638e6d correction-in-place.
-- **2026-11-01 07:04+08** — r9's honest-skip debt PAID: direct main-CI verify
-  succeeded via tower (2x identical): 3/3 latest main push-runs
-  completed/success (11514 c93, 11512 #4617, 11506 c93) — main fully green;
-  github_workflow_runs flakiness is transient tower-side, retry with smaller
-  limit works. Loop census is CONDITIONAL (07:04 printed legacy UNSEEN format
-  again, no census line) — r9's "loop ships census" holds only when the tool
-  responds; not a defect, a fallback branch. No clean pick (claimable 0/5).
-  No claim, no baseline/pin edits. Worklog r10 in-place (this patch).
+- **2026-10-31 23:04 → 2026-11-01 06:04+08 (condensed)** — r7 #4455 (one-cycle
+  contract). 03:04: FIRST CI-plane verify via tower: fleet branches ALL success;
+  open PRs (100% external `paykaribazaronline`) had NO runs → U2 root cause =
+  CI-less external queue (reviewer lane); open-count truth = explicit `state=open`;
+  r8 #4529/70cc54e9. 06:04: PR-plane 7→17 still external; census 0 green /
+  3 red (#4598/#4597/#4595) / 14 UNSEEN; r9 #4600/de638e6d correction-in-place.
+- **2026-11-01 07:04+08** — r9 debt PAID: main-CI via tower (2x identical) 3/3
+  success (11514 c93, 11512 #4617, 11506 c93) — main green; workflow_runs
+  flakiness transient tower-side, smaller-limit retries fine; loop census
+  CONDITIONAL (fallback branch, not a defect); no claim (0/5). Worklog r10.
+- **2026-11-01 08:04 → 15:04+08 (4 cycles condensed — fold-promise kept)** —
+  no-patch era: claimable 0/5 + 0 open P0 on every visible board (5→27→30
+  rows; one tower-429 board-dark window); facts variable or other-owned
+  receipts (c95 RESET=glm29, c97 MEGA REAP #2=sentry, c101 elder-fall #4785).
+  15:04 DURABLE: 17-PR external wave episode CLOSED — explicit-repo query:
+  0 open on supremeai-open; recent-30 closed 100% merged 04:44–06:55Z
+  (last #4785) — reviewer-lane arc resolved, U2 CI-less-queue surface gone.
+  (R66 re-hit live: repo-omit → default `supremeai` rows 368-376; perPage
+  camelCase dropped — schema governs #2452/#2469.) Worklog r11 (this patch).
