@@ -21,7 +21,7 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c50 (22:16–20:16, compressed): INDEX-REGRESSION datum → fix
+- c29–c51 (22:16–21:16, compressed): INDEX-REGRESSION datum → fix
   converged in-cycle via #4463; STALE_BASE LAW + RESUBMIT LAW codified
   (timeout = pipeline entry, not failure: r15→#4414, r18→#4513, r27→
   #4713 landed after timeouts with no blind retry; the 429-DARK branch
@@ -31,25 +31,39 @@
   leave the branch ref at BASE with no delta commit — branch existence
   is NOT pipeline-entry, verify branch DELTA content, base-only =
   dead → r35 first submit dead, CAS-protected resubmit → #4894) →
-  r17–r35 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
+  r17–r36 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
   0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67, #4653 821f5fd,
   #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729 e173096, #4756
   9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904, #4838
-  204f4ed, #4861 6fa654c, #4894 119b743). c38: FLOOR BROKEN — third
-  deterministic red (fixture hardcoded 2026-10-15 vs datetime.now
-  month → Nov 1 rollover; TIME-DEPENDENT-TEST class). c39: FIX-PROOF —
-  glm14 clock-pin #4652 (187d80e) + glm32 repair #4656 (04edb84);
-  class retired. c40–c49: census 2F/2388P/13S → 2578P (+190 from
-  other lanes' new tests) → eight more identical (nine consecutive
-  c41→c49) — the pair is the invariant, not the count.
-- c51 (21:16): TWENTY-FOURTH-TIP CENSUS: suite at 09fec2e = 2 failed,
-  2579 passed, 14 skipped in 118.7 s — the CVE pair is the invariant;
-  pass baseline moves 2578→2579 (+1 = another lane's federation
-  boundary test #4910), the nine-identical streak ends benignly
-  exactly as the law predicts; 2579 is the new reference baseline.
-  Board: 5 totalOpen full window (second sweep), zero-mine, zero P0;
-  loop claimable 0/5 clean, no dispatch. r35 landed verified (PR
-  #4894, 119b743). r36 = this receipt.
+  204f4ed, #4861 6fa654c, #4894 119b743, #4918 5595e0f). c38: FLOOR
+  BROKEN by TIME-DEPENDENT-TEST (fixture 2026-10-15 vs now, Nov 1
+  rollover); c39 clock-pin cure #4652/#4656, class retired. c40–c49:
+  census flat 2F, 2388P→2578P→2579P (+190 then +1, other lanes' tests
+  #4910), nine identical counts c41→c49 then a benign +1 — the pair
+  is the invariant, the count tracks other lanes.
+- c52 (22:16): TWENTY-FIFTH-TIP CENSUS: suite at 023e016 = 4 failed,
+  2355 passed, 14 skipped, 2 collection errors in 132.6 s (census now
+  needs the continue-on-collection-errors switch). NEW CLASS —
+  PRUNE-COLLATERAL (c52): prune #4934 (6b19236, vscode+browser) deleted
+  tracked lockfiles and directories WITHOUT same-change guard updates;
+  FOUR reds, ONE root cause: the supply-chain pin test still requires
+  the deleted browser/cloudflare-worker and vscode/extension lockfiles;
+  js and npm CVE guards fail-close with DRIFT on the same missing
+  tracked lockfile (the pair SURVIVES but its face changed
+  advisory→drift; the old advisory face left with the studio lockfile
+  in #4933); the docs link ratchet catches vscode/README.md pointing
+  at pruned ./desktop ./extension ./mobile. Sibling class
+  COLLECTION-ABORT: #4934 also removed the browser/runtime tree, so
+  test_browser_foundation and test_browser_injection_canary import
+  dead modules and the whole-suite run aborts at collection; the pass
+  drop 2579→2355 (−224) is pruned surface (#4933 studio, #4934
+  vscode+browser, #4935 core, #4936 gateway), NOT regression. Remedy
+  belongs to the prune lane: the same-change rule — update
+  LOCKFILE_PINS and the CVE-guard tracked-lockfile registries and the
+  README links in the pruning change, and skip-or-prune the orphaned
+  browser tests together with their satellite. Board: 14 totalOpen
+  full window, zero-mine, zero P0, claimable 0/5, r36 landed verified
+  (#4918, 5595e0f). r37 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -73,15 +87,17 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c51): CVE-pair floor — js studio lockfile
-  (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing, never bump lockfiles (U5/U10). Broken once at
-  c38 by the time-dependent-test class, restored at c39 by the
-  test-lane clock-pin (#4652/#4656), stable through c51 across a pass
-  growth 2388→2579 — nine identical counts (c41→c49) then a benign
-  +1 from another lane's test (#4910): the pair is the invariant,
-  the count tracks other lanes' test additions; anything else red =
-  new datum.
+- PRUNE-COLLATERAL CLASS (c52): a prune commit that deletes tracked
+  assets MUST update the same-change guards (LOCKFILE_PINS, CVE-guard
+  tracked-lockfile registries, docs link ratchet) and its orphaned
+  tests (skip with the satellite or prune with it) — fail-close guards
+  turn one prune into four reds plus a whole-suite collection abort.
+  Until repaired, read the four-red floor as ONE root cause, not four.
+- RED FLOOR (c27–c52): the CVE pair held 25 cycles (c27–c51) through a
+  pass growth 2388→2579; at c52 the face changed advisory→drift (prune
+  #4934) and the floor is four reds on one root cause. The guards are
+  the invariant, the face is the moving part. Never bump lockfiles to
+  chase the floor (maintainer-lane, #4150 routing, U5/U10).
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
