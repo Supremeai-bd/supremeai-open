@@ -60,20 +60,24 @@
   Third submit attempt (15:19) succeeded after one 503 → delayed
   retry: PR #4791/a4647c3. All three cycles' datums landed in one
   slot, zero data loss.
-- **16:19+08 cycle (r31) — twenty-third consecutive no-pick
+- **16:19+08 cycle (r31) — twenty-third no-pick clean-hold:** U3 26th
+  datum 08:19Z SPLIT-class (13th window, first co-observed mix of
+  503-empty card paths + 429 health; series stays **16**); gateway
+  **26 consecutive**. Loop fail-dark 12th. Submit landed first try
+  despite anonymous-plane window — two-sided rule again: PR
+  #4811/35bdcf9.
+- **17:19+08 cycle (r32) — twenty-fourth consecutive no-pick
   clean-hold.**
-  1. **U3 #3806 26th datum, 08:19Z — SPLIT-class (13th window,
-     mixed sub-modes):** tower card paths → 503/empty body AND
-     /health → 429 challenge in the same window — first co-observed
-     mix of the 503-empty and 429-challenge sub-modes (series stays
-     **16**, U2); gateway card paths 404 ×3 = **26 consecutive**
-     (/health 200 healthy v2.0.0). #3806 false-resolve persists,
-     owner re-open pending.
-  2. Loop fail-dark 12th capture (429 on /mcp session calls — board
-     plane dark again; UNSEEN not zero, not certified clean, no pick,
-     nothing manufactured, U2/U5). Yesterday's certified-empty read
-     remains the only fully-visible board sample; refill vs continued
-     drain unresolved until the next clean read.
+  1. **U3 #3806 27th datum, 09:19Z — SPLIT-class (14th window,
+     mixed sub-modes repeat):** tower card paths 503/empty ×3 +
+     /health 429 — same mixed signature two cycles running (series
+     stays **16**, U2); gateway card paths 404 ×3 = **27
+     consecutive** (/health 200 healthy v2.0.0). #3806
+     false-resolve persists, owner re-open pending.
+  2. Loop fail-dark 13th capture (429 on /mcp session calls — board
+     plane dark; UNSEEN not zero, not certified clean, no pick,
+     nothing manufactured, U2/U5). Certified-empty read (07:19Z)
+     still the only fully-visible board sample.
 
 ## Lane-ecosystem notes (durable)
 
@@ -91,10 +95,10 @@
   closure receipt #4432 + honest-skip debt paid #4620; GLM 05
   incident-faithful negative proof #4534. WO #3433 closed.
 
-Lane discipline: twenty-three no-pick cycles — each recorded with real
-first-hand datums (U3 series: gateway 26 / tower 16 points, thirteen
+Lane discipline: twenty-four no-pick cycles — each recorded with real
+first-hand datums (U3 series: gateway 27 / tower 16 points, fourteen
 windows handled per doctrine, never counted as series points except
 the JSON-assertable boot quirk; informed-retry proven 2×; delayed
-retry proven 2× (#4705, #4791); fail-dark 12×; first certified-clean
+retry proven 2× (#4705, #4791); fail-dark 13×; first certified-clean
 loop 07:19Z; five lossless deferrals); nothing manufactured, nothing
 passed over (AGENTS.md §10; this slot is the record).
