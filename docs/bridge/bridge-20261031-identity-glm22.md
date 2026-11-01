@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-39 condensed to one table
+> only, replaced in place every cycle. Cycles 1-40 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-39 (condensed)
+## Landed cycles 1-40 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -65,48 +65,46 @@
 | 37 (16:2x) | 25th re-arm RED (2×429) — PII →150×9 (8th +0, ~8h); census 32→40, arc #7 seven points +38 (longest rise, highest count); #4535 13.1h solo-era first full window, roster=[4535] exact | PR #4813 |
 | 38 (17:2x) | 26th re-arm RED — PII →150×10 TEN-PIN milestone (9th +0); MEGA-DRAIN #5: 40→8 (−32, series record, >2× MD#4); #4535 14.2h survived SECOND MEGA-DRAIN, roster=[4535]; drain-to-refill shape prediction exact | PR #4834 |
 | 39 (18:2x) | 27th re-arm RED — PII pin broke: 150→151 (+1) re-opened cap-vs-organic, decision rule pre-registered (151-pins=cap, drift=organic); refill arc #8 opened 8→10 (law 6/6); #4535 15.1h steady | PR #4858 |
+| 40 (19:2x) | 28th re-arm RED first-attempt — PII 151→153 (+2), pre-registered vote: cap DEMOTED to rival, organic-regrowth LEADING (ten-pin = ~9h plateau inside organic regime); census 10→16; #4535 16.1h; glm11 r41 confirms regrow | PR #4875 |
 
-## Cycle 40 (2026-11-01 19:2x+08) — the vote is in: organic leads
+## Cycle 41 (2026-11-01 20:2x+08) — blind exit 3 again; arc #8 climbs to 23
 
-- Loop verify 9/9 on 7e0023a; pick claimable 0/5.
-- **Tripwire re-arm #28: exit 2 RED first-attempt (zero noise).
-  PII 28-point: 151→153 (+2) — continued climb, +3 over two
-  cycles.** The pre-registered rule has its first vote: NOT pins
-  at 151 → **cap-artifact reading DEMOTED to rival; organic-
-  regrowth promoted to LEADING.** The ten-pin 150 steady state
-  now reads as a ~9h plateau INSIDE a larger organic regime, not
-  a hard ceiling — the same falsification shape as C19→C20, at
-  ten times the evidence scale. A hard-cap revival would need
-  pins at 153+ (and even cap≥153 is unfalsifiable-ish); final
-  verdict stays owner-side.
-- Census 10→16 (+6, ZERO departures) — arc #8 third point
-  (8→10→16, +8 from drain); the board's regrow mirrors the PII
-  plane's climb — two surfaces, one recovery, consistent with
-  organic on both.
-- **#4535 = 16.1h — fourth window of the solo era**; roster
+- Loop verify 9/9 on 2dbe1f4; pick claimable 0/5.
+- **Tripwire re-arm #29: exit 1 → exit 1 → exit 3 — second
+  NO-EXPOSURE-shaped exit of the series, same adjudication as
+  the first (C35): criterion 2 FAIL-CLOSED reason is literally
+  "non-JSON body http 429", criteria 1/3 INDETERMINATE on the
+  same plane — infra-confounded blindness, NOT the GREEN.**
+  No PII reading this cycle; the 28-point series pauses at 153.
+  **Empirical rule now twice-confirmed: exit 3 arrives during
+  brownout blindness; clear-air runs return exit 2. A genuine
+  flip is a clear-air exit 3 — two different worlds that the
+  exit code alone does not separate.**
+- Census 16→23 (+7, ZERO departures) — arc #8 fourth point
+  (8→10→16→23, +15 from drain), climb still smooth.
+- **#4535 = 17.2h — fifth window of the solo era**; roster
   still exactly [4535].
-- Neighbor datum: glm11 r41 (#4871) — census 7→15, "refill climb
-  restarts, sweep is one-off": independent fleet confirmation of
-  the same regrow I am timing on my planes.
+- Neighbor datum: glm13 c105 (#4893) — sentry chain ACCUMULATION
+  ~+7/h matches the mint cadence: third independent surface
+  reading the same regrow.
 
 ## Reflection Evidence
 
-- **why:** the pre-registration discipline paid off exactly as
-  designed: the rule was written before the point arrived, so
-  the +2 lands as a clean vote, not a rationalization. The
-  deeper lesson mirrored C20: my longest steady state (10 exact
-  pins, ~9h) still ended in falsification of the reading I had
-  built on it — evidence scale does not exempt a label from the
-  next point. Demoting my own promoted reading (C32) on fresh
-  data is the same self-correction class the fleet rewards; the
-  150-pin archive stays valuable as the best-characterized
-  plateau of the run. Board and PII climbing together, with
-  glm11 confirming from a third surface, makes organic-regrow
-  the coherent picture.
-- **alternatives_rejected:** rescuing the cap reading as "cap ≥153"
-  (unfalsifiable rescue; the rule said drift=organic); calling
-  the +2 a truncation artifact (probe lists rows, count is
-  parsed from them; 153 rows parsed, not truncated); reading
-  arc #8's 16 as a new peak regime (arc #7 hit 40 before
-  draining; shape incomplete); treating #4535's survival as
-  guaranteed (16.1h is still just evidence of reap-resistance).
+- **why:** the cycle's value is negative evidence handled well:
+  the probe's most benign exit arrived twice-removed from any
+  observation, and the C35 precedent was applied without
+  relitigating — pre-registered rules doing quiet work. Writing
+  the exit-3-in-brownout empirical rule as twice-confirmed turns
+  two past wait-and-see moments into a reusable classifier:
+  the SAME exit code maps to OPPOSITE worlds depending on
+  observability, which is exactly why the acceptance contract
+  demands observable surfaces. Census keeps arc #8 smooth with
+  zero departures — the regrow picture needs no update.
+- **alternatives_rejected:** banking exit 3 as the long-awaited
+  GREEN (same blindness as C35; the adjudicating rule was
+  written then and stands); reading the blind run as PII
+  evidence of any direction (absence of observation is not
+  observation of absence — C35's phrasing still exact); reading
+  arc #8's 23 as certain to reach 40 (each arc has its own
+  ceiling; #7's 40 is data, not a promise); upgrading #4535's
+  streak into a law about its permanence (#4272's ending governs).
