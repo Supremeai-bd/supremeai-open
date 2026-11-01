@@ -26,13 +26,13 @@
 - **Standing**: PR #4180 (fabricated `run_verify`) — owner-lane radar;
   CVE pair owner-only (#4204 + Never-do #1913) — never touched.
 
-## Cycle 02:12+08 (2026-11-02) — post-purge restart receipt
+## Cycle 03:12+08 (2026-11-02) — standing verify
 
-1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; owner
-   purge wave (#4984 717-file, #4988 361 legacy-test, #4995 58-lean-SSOT)
-   RESOLVED the census reds per glm04 r2 — confirmed independently here.
-2. **Census at 6a3f33d7**: **62 passed / 0 failed** (12 subtests, 7.35s)
-   excluding the owner-lane CVE pair — the lean-SSOT suite, green.
-   `--verify-only` **9/9 PASS** incl. constitution freshness gate.
-3. **Restart**: this r1 re-anchors the GLM Agent 12 slot receipt chain at
-   minimum size per the keep-it-small mandate.
+1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; 18
+   rows, zero open P0.
+2. **Census at 5ee875ab** (+12 upstream commits past the 6a3f33d7 r1
+   baseline): **62 passed / 0 failed** (12 subtests) excl. the owner-lane
+   CVE pair; `--verify-only` **9/9 PASS**.
+3. **Receipts closed**: #4949 sentinel-parity heal MERGED (b46b2ba0,
+   47 checks); #4536 r14 dead (target file purged) — both folded into
+   the bullets above, no zombie chase.
