@@ -1,11 +1,10 @@
 # GLM Agent 19 — Worklog (Job ID 486803)
 
 > Post-purge restart (2026-11-01). The founder's doc purge (#4965,
-> Batch 1/5: 308 files / 16,356 lines from docs/reports/ +
-> docs/bridge/) removed every lane worklog, including this lane's
-> 37-slot chain (r1–r37, PRs #3312–#4943). Nothing is restored
-> verbatim; full history stays in git and the archive. This file
-> restarts the small live slot per the standing hourly mandate
+> wave 1 of the Nov-1 slimming) removed every lane worklog, including
+> this lane's 37-slot chain (r1–r37, PRs #3312–#4943). Nothing is
+> restored verbatim; full history stays in git and the archive. This
+> file restarts the small live slot per the standing hourly mandate
 > ("keep worklog small, remove old worklog and keep only important
 > part") — only the durable facts a fresh reader needs.
 
@@ -19,48 +18,52 @@
 - **Standing U3 duty (#3806):** the tower's A2A card paths
   (`/.well-known/agent-card.json`, `/a2a`, legacy `/agent.json`) 404
   while the tower card's own `url` field declares the tower as the A2A
-  endpoint. Issue was false-resolved once (merge-linked ≠
-  finding-resolved, #3955); owner re-open still pending. Probed every
-  cycle; one pass per cycle, no hammering.
-- **Series state (35 datums):** gateway **35 consecutive** card-path
-  404s; tower **23** (only JSON-assertable 404s count, U2); 18
+  endpoint. False-resolved once (merge-linked ≠ finding-resolved,
+  #3955); owner re-open still pending. One probe pass per cycle, no
+  hammering.
+- **Purge survival:** the slot survived both purge waves under its
+  original name (wave 2, #4984 + #4988 + #4995, spared docs/bridge/
+  entirely); the pre-declared two-strike clause stood down at r40.
+- **Series state (36 datums):** gateway **36 consecutive** card-path
+  404s; tower **24** (only JSON-assertable 404s count, U2); 19
   brownout windows absorbed without hammering (429 challenge,
-  503-empty, boot "starting" quirk ×3, hang HTTP-000; window scope
-  splits proven cross-plane AND intra-plane); 6 shadow-free windows;
-  loop fail-dark 20×; certified-clean reads 2×; 5 lossless deferrals;
-  delayed-retry proven 4× (#4705, #4791, #4943, #4997);
-  informed-retry 2× (#4440, #4461).
+  503-empty, boot "starting" quirk ×4, hang HTTP-000, hollow 200-shell
+  observed between datums via Sentry c113; window scope splits proven
+  cross-plane AND intra-plane); loop fail-dark 21×; certified-clean
+  reads 2×; 5 lossless deferrals; delayed-retry proven 5× (#4705,
+  #4791, #4943, #4997, #5042); informed-retry 2× (#4440, #4461).
 - **Tower-brownout doctrine:** challenge windows cluster at the fleet
   cron wave, self-clear in ~1–2 min; one 429/5xx → single delayed
   retry (~100s); a 5xx/429 pair → U5 stop + lossless deferral; the
-  session submit-plane can pass windows that block anonymous curl
-  (two-sided — neither plane predicts the other).
+  session submit-plane can pass windows that block anonymous curl.
+- **Stranded-branch clause (proven #5042):** a 5xx that lands after
+  branch-create but before PR-open leaves an orphan branch that
+  collides with the next hour's taskId; verify the orphan blob by
+  fetch, then a same-taskId resubmit is idempotent — the bridge
+  reuses the branch, CAS via baseSha, exactly one PR.
 
-## This cycle (02:19+08 Nov 2, r40) — thirty-second no-pick clean-hold
+## This cycle (03:19+08 Nov 2, r41) — thirty-third no-pick clean-hold
 
-1. **Two-strike rule stands down — survived both purges.** Owner's
-   second slimming wave landed (#4984 717-file purge, #4988 361
-   legacy-test prune, #4995 58-lean-SSOT); docs/bridge/ **survived**
-   with 15 files, this lane's slot untouched under its original name
-   (others renamed to -post-purge variants). No third-rebuild clause
-   needed; the gate-accepts-either-way posture pre-declared in r39
-   held without conflict.
-2. **U3 #3806 35th datum, 18:19Z — full steady state, zero new
-   windows:** tower card paths 404 ×3 JSON-assertable (9B) → tower
-   **23**; `/health` 200 (293B) — the 16:19Z boot reboot has fully
-   recovered. Gateway fully clean → **35 consecutive** (`/health`
-   healthy).
-3. **Loop read:** freshness guard auto-rebased the tree (was 1
-   behind) at boot; board totalOpen=**13** (2→13, +11 refill —
-   drain-refill cadence now four-way confirmed: this series
-   23→6→18→2→13, GLM 11 r43–r47, Sentry c111–c112); claimable 0/5;
-   1 open PR (#4872) check-status UNSEEN → fail-dark 20th, no pick
-   (U2).
-
-Previous cycle (r39, 00:19+08): 34th datum was the 18th window, boot
-sub-mode ×3 (tower `/health` `starting`, 0/0/0 — reboot observed);
-restart convention adopted fleet-wide (GLM 04/11/14 after this lane's
-r38/#4971); first submit 429 → 100s delayed retry landed #4997.
+1. **U3 #3806 36th datum, 19:19Z — boot sub-mode ×4:** tower
+   `/health` 200 `starting` 0/0/0 `stale:true` — **rebooted again
+   within the hour**, right after Sentry c113's hollow #7 (18:32–18:33Z,
+   503-empty + 200-shell, healed ≤95s); card paths 404 ×3
+   JSON-assertable → tower **24**. Gateway fully clean (`/health`
+   healthy v2.0.0) → **36 consecutive**. Window 19. Shape-watch: the
+   health JSON now carries sweep fields (`lastCompletedSweepAt`,
+   `sweepCompletions`, `stale`) — corroborates c113's "2nd tower
+   tool-shape change".
+2. **Loop read:** freshness guard auto-rebased the tree (1 behind) at
+   boot; board totalOpen=**20** (13→20, +7 — refill cadence holds:
+   23→6→18→2→13→20 across five reads); claimable 0/5; 1 open PR
+   (#4872) check-status UNSEEN → fail-dark 21st, no pick (U2).
+3. **r40 folded:** two-strike stood down (#4995 spared docs/bridge/);
+   the 01:19-hour instance's r40 attempt stranded mid-flight (branch
+   created, PR lost to 503; its 17:19Z census — tower degraded steady
+   29/5/34, board 7 — survives in git history as the reboot-recovery
+   midpoint between 16:19Z boot and 18:19Z steady); same-taskId retry
+   landed #5042/6b10e94 — delayed-retry 5th proof, stranded-branch
+   clause minted from it.
 
 Lane discipline: nothing manufactured, nothing passed over; the slot
 records what the loop dispatches and what the probes observe (AGENTS.md
