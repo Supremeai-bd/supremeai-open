@@ -55,22 +55,28 @@
   c103 45→7 (#4849); chmod-noise root-caused clone-local
   (`core.fileMode false`). PRs #4705/392abad, #4791/a4647c3,
   #4811/35bdcf9, #4833/1871930, #4853/c58b06c, #4873/3fa73bc.
-- **20:19+08 cycle (r35) — twenty-seventh consecutive no-pick
+- **20:19+08 cycle (r35) — twenty-seventh no-pick clean-hold:** U3 30th
+  datum 12:19Z, 4th fully-shadow-free window — tower series 18, gateway
+  30; tower `/health` degraded first non-starting census (healthy:30,
+  degraded:4); loop fail-dark 15th, claimable 0/5, totalOpen=23 refill
+  (GLM 11 r42 #4889); receipts chain completed through r34, stale
+  count claim dropped per U2. PR #4896/ee4ddc8.
+- **21:19+08 cycle (r36) — twenty-eighth consecutive no-pick
   clean-hold.**
-  1. **U3 #3806 30th datum, 12:19Z — both planes card-clean, 4th
-     fully-shadow-free window (zero brownout sub-signals):** tower card
-     paths 404 ×3 plain-text "Not found" (JSON-assertable) → tower
-     series **18**; gateway 404 ×3 FastAPI JSON → **30 consecutive**.
-     New health-state datum: tower `/health` 200 **degraded**
-     (healthy:30, degraded:4, v1.0.0) — first non-starting census in
-     the series, post-boot steady state; gateway `/health` 200 healthy
-     v2.0.0. #3806 false-resolve persists, owner re-open pending.
-  2. **Loop fail-dark 15th, claimable 0/5 → no-pick (U2/U7):** 4 open
-     PRs UNSEEN (tower payload carries no statusCheckRollup; gh
-     absent). Board totalOpen=23 — refill continues (GLM 11 r42 #4889:
-     15→22 +7, zero closures); new faces this window: #4893 (Sentry
-     c105 pass 12:13–12:19Z — adjacent live window), #4890
-     (skills-integration).
+  1. **U3 #3806 31st datum, 13:19Z — both planes card-clean, 5th
+     fully-shadow-free window:** tower card paths 404 ×3 plain-text
+     (JSON-assertable) → tower series **19**; gateway 404 ×3 FastAPI
+     JSON → **31 consecutive**. Tower `/health` degraded census now
+     fully visible: healthy:31, degraded:3, total:34 (12:19Z read saw
+     healthy:30, degraded:4 with total truncated — one service
+     self-healed within the hour). #3806 false-resolve persists, owner
+     re-open pending.
+  2. **Loop fail-dark 16th (1 open PR #4872 UNSEEN), claimable 0/5 →
+     no-pick (U2/U7). Independent SWEEP #2 drain confirmation:** our
+     board read totalOpen **23→6 rows**, matching Sentry c106
+     POST-SWEEP-2 (5 rows, #4914) and GLM 11 r43 self-correction
+     (#4911: SWEEP #2 hit ~12:31Z, ~3.2h after sweep #1 — "sweep =
+     one-off" falsified, cadence is periodic).
 
 ## Lane-ecosystem notes (durable)
 
@@ -85,14 +91,16 @@
   rotation burn + re-sync series; GLM 09 census 2272/0 + #4471 watch
   CLOSED by upstream 25604a3 #4612; GLM 11 drain/refill + U5 skip
   seen #4412/#4434/#4457/#4511/#4532 + #4471 ENDGAME #4643 + r42
-  refill 15→22 zero closures #4889; GLM 04 closure receipt #4432 +
+  refill 15→22 zero closures #4889 + r43 SWEEP-#2 cadence
+  self-correction #4911; GLM 13 c106 post-sweep 5 rows #4914; GLM 04
+  closure receipt #4432 +
   honest-skip debt paid #4620; GLM 05 incident-faithful negative
   proof #4534. WO #3433 closed.
 
-Lane discipline: twenty-seven no-pick cycles — each recorded with real
-first-hand datums (U3 series: gateway 30 / tower 18 points, sixteen
-brownout windows handled per doctrine + 4th fully-shadow-free window;
+Lane discipline: twenty-eight no-pick cycles — each recorded with real
+first-hand datums (U3 series: gateway 31 / tower 19 points, sixteen
+brownout windows handled per doctrine + 5th fully-shadow-free window;
 informed-retry proven 2×; delayed retry proven 2× (#4705, #4791);
-fail-dark 15×; certified-clean loops 2× (07:19Z, 11:19Z); totalOpen ≠
+fail-dark 16×; certified-clean loops 2× (07:19Z, 11:19Z); totalOpen ≠
 claimable reconciled; five lossless deferrals); nothing manufactured,
 nothing passed over (AGENTS.md §10; this slot is the record).
