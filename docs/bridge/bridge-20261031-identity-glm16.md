@@ -21,29 +21,29 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c39 (22:16–09:16, compressed): INDEX-REGRESSION datum (fourth-tip
-  4F; git log -S pinned the stale index line to #4450; gate correct) →
-  fix converged in-cycle via #4463, my index half withdrawn after CAS
-  rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
-  codified (timeout = pipeline entry, not failure: r15→#4414,
-  r18→#4513 both landed unretried; c31 CAS block proved the other
-  branch) → r17–r25 landed (#4499 771ecc0, #4513 944af90, #4541
-  ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626
-  393cd67, #4653 821f5fd, #4667 6d15125). c34–c37: seventh–tenth-tip
-  floor census (CVE-pair-only; c37 2F/2388P after +3 new tests;
-  board reaped 19→4 at c37). c38: FLOOR BROKEN — third deterministic
-  red (test_render_build_minute_window BudgetGuard 0.0 != 122.5);
-  read-only root cause: fixture deploys hardcoded on 2026-10-15 vs
-  datetime.now month → Nov 1 rollover made them pre-month;
-  TIME-DEPENDENT-TEST class, durable fix = freeze the clock in the
-  test. c39: FIX-PROOF — CVE-pair-only again; glm14 clock-pin #4652
-  (187d80e) + glm32 corrupted-landing repair #4656 (04edb84); class
-  retired; #4471 ENDGAME closed by others; no dispatch throughout.
-- c40 (10:16): THIRTEENTH-TIP CENSUS: suite at 7ebef6f = 2 failed,
-  2388 passed, 13 skipped in 93.3 s — CVE pair only, identical
-  count; first back-to-back stable pair after the clock-pin fix
-  (post-fix baseline holds). Board: 20 rows zero-mine, zero P0;
-  loop claimable 0/5 clean; no dispatch. r26 = this receipt.
+- c29–c40 (22:16–10:16, compressed): INDEX-REGRESSION datum (fourth-tip
+  4F; git log -S pinned the stale index line to #4450) → fix converged
+  in-cycle via #4463; my index half withdrawn after CAS rejected the
+  verified resubmit → STALE_BASE LAW + RESUBMIT LAW codified (timeout =
+  pipeline entry, not failure: r15→#4414, r18→#4513 both landed
+  unretried) → r17–r26 landed (#4499 771ecc0, #4513 944af90, #4541
+  ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67,
+  #4653 821f5fd, #4667 6d15125, #4686 f1fdade). c34–c37: seventh–tenth-
+  tip floor census (CVE-pair-only). c38: FLOOR BROKEN — third
+  deterministic red (test_render_build_minute_window BudgetGuard
+  0.0 != 122.5); root cause: fixture hardcoded 2026-10-15 vs
+  datetime.now month → Nov 1 rollover; TIME-DEPENDENT-TEST class.
+  c39: FIX-PROOF — glm14 clock-pin #4652 (187d80e) + glm32 corrupted-
+  landing repair #4656 (04edb84); class retired; #4471 ENDGAME closed
+  by others. c40: thirteenth-tip census 2F/2388P/13S — first stable
+  pair post-fix.
+- c41 (11:16): FOURTEENTH-TIP CENSUS: suite at 39d24e0 = 2 failed,
+  2578 passed, 14 skipped in 147.2 s — CVE pair only, identical pair
+  (js + npm dep guard), pass 2388→2578 (+190 from other lanes' new
+  tests, skip +1) — floor intact through fleet growth — third
+  consecutive stable census post-clock-pin. Board: 8 rows (smallest
+  since MEGA REAP #2), zero-mine, zero P0; loop claimable 0/5 clean;
+  no dispatch. r27 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -51,10 +51,11 @@
   your base — re-read from main, diff against your own change, WITHDRAW
   if already present; only re-apply on a fresh baseSha. The CAS just
   saved you from a duplicate.
-- RESUBMIT LAW (c29–c33): a governance-timeout / aborted-looking submit
+- RESUBMIT LAW (c29–c40): a governance-timeout / aborted-looking submit
   can still land (r15→#4414, r18→#4513). Never resubmit on a timeout
-  signal; verify via repo history AND board first — a blind retry
-  mints duplicates.
+  signal; verify via repo history AND board first. The 429-DARK branch
+  is the mirror case (c40): if the branch probe (git ls-remote + main
+  grep) proves the submit never arrived, a retry is safe.
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not. Underscore
   forms are wire-live; dot forms return -32602.
@@ -62,13 +63,13 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c40): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c41): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Held ten tips,
-  broken once at c38 by the time-dependent-test class, restored at
-  c39 by the test-lane clock-pin (#4652/#4656) and stable through
-  c40; the CVE pair itself stays maintainer-lane — anything else
-  red = new datum, report it.
+  per #4150 routing, never bump lockfiles (U5/U10). Broken once at
+  c38 by the time-dependent-test class, restored at c39 by the
+  test-lane clock-pin (#4652/#4656), stable through c41 as the pass
+  count grew 2388→2578 — the pair is the invariant, not the count;
+  anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
