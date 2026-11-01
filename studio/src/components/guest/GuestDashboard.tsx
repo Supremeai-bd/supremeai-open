@@ -16,8 +16,9 @@ const AI_MODELS_DATA = [
 
 interface GuestDashboardProps {
   language: 'bn' | 'en';
-  onSwitchToUser: () => void;
+  onSwitchToUser?: () => void;
   avatarSettings?: AvatarSettings;
+  isUserWorkspace?: boolean;
 }
 
 type DeviceType = 'desktop' | 'tablet' | 'mobile';
@@ -302,6 +303,7 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
   language,
   onSwitchToUser,
   avatarSettings,
+  isUserWorkspace = false,
 }) => {
   const [activeMainTab, setActiveMainTab] = useState<'sandbox' | 'models' | 'tokens' | 'json'>('sandbox');
   const [device, setDevice] = useState<DeviceType>('desktop');
@@ -413,9 +415,9 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
           <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400">
               <Sparkles className="w-4 h-4 text-cyan-400" />
-              <span>{language === 'bn' ? 'পাবলিক ও গেস্ট ওয়ার্কবেঞ্চ' : 'Public & Guest AI Workbench'}</span>
+              <span>{isUserWorkspace ? (language === 'bn' ? 'ইউজার ওয়ার্কস্পেস ড্যাশবোর্ড' : 'User Workspace Dashboard') : (language === 'bn' ? 'পাবলিক ও গেস্ট ওয়ার্কবেঞ্চ' : 'Public & Guest AI Workbench')}</span>
               <span aria-hidden="true">·</span>
-              <span className="text-emerald-400 font-mono font-bold">Zero Signup Required</span>
+              <span className="text-emerald-400 font-mono font-bold">{isUserWorkspace ? 'Authenticated Engine' : 'Zero Signup Required'}</span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
@@ -426,8 +428,8 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
 
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               {language === 'bn'
-                ? 'কোনো অ্যাকাউন্ট খোলার ঝামেলা ছাড়াই সরাসরি কোড এডিট করুন, তাৎক্ষণিক লাইভ প্রিভিউ দেখুন এবং তৈরি করা কোড ১-ক্লিকে ডাউনলোড করুন।'
-                : 'Instantly build, inspect and test production-grade UI components across Desktop, Tablet and Mobile frames without any sign-up hurdles.'}
+                ? 'সরাসরি কোড এডিট করুন, তাৎক্ষণিক লাইভ প্রিভিউ দেখুন, মডেল বেঞ্চমার্ক তুলনা করুন এবং তৈরি করা কোড ১-ক্লিকে ডাউনলোড করুন।'
+                : 'Instantly build, inspect and test production-grade UI components across Desktop, Tablet and Mobile frames with zero friction.'}
             </p>
 
             <div className="pt-2 flex flex-wrap items-center gap-3">
@@ -439,13 +441,15 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
                 <span>{language === 'bn' ? 'সহকারীর অডিও গাইড শুনুন' : 'Listen to Audio Guide'}</span>
               </button>
 
-              <button
-                onClick={onSwitchToUser}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/30"
-              >
-                <span>{language === 'bn' ? 'ইউজার ওয়ার্কস্পেস খুলুন' : 'Open User Workspace'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              {!isUserWorkspace && onSwitchToUser && (
+                <button
+                  onClick={onSwitchToUser}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/30"
+                >
+                  <span>{language === 'bn' ? 'ইউজার ওয়ার্কস্পেস খুলুন' : 'Open User Workspace'}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 

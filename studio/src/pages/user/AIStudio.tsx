@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
+import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles, LayoutDashboard } from 'lucide-react';
 import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
+import { GuestDashboard } from '../../components/guest/GuestDashboard';
 import { SplitStudioView } from '../../components/studio/SplitStudioView';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
@@ -147,7 +148,8 @@ const MobileEmptyState: React.FC<{
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'split' | 'preview' | 'mobile'>('split');
+  // Default landing tab: 'dashboard' (GuestDashboard interface as requested by user)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'chat' | 'split' | 'preview' | 'mobile'>('dashboard');
   // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
   // local history sidebar (mainstream-AI pattern). Home and Prompt Library
   // left the rail; users enable features from Settings/Profile.
@@ -215,6 +217,14 @@ export const AIStudio: React.FC = () => {
         <div className="flex items-center gap-4 text-xs font-medium">
           <button 
             type="button"
+            onClick={() => setActiveTab('dashboard')}
+            aria-pressed={activeTab === 'dashboard'}
+            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'dashboard' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+          >
+            <LayoutDashboard size={14} /> Workbench Dashboard
+          </button>
+          <button 
+            type="button"
             onClick={() => setActiveTab('split')}
             aria-pressed={activeTab === 'split'}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'split' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
@@ -269,6 +279,15 @@ export const AIStudio: React.FC = () => {
       </div>
 
       <div className="flex-1 min-h-0 relative">
+        {activeTab === 'dashboard' && (
+          <div className="absolute inset-0 overflow-y-auto p-4 sm:p-6 sa-view-panel-enter">
+            <GuestDashboard
+              language="en"
+              isUserWorkspace={true}
+            />
+          </div>
+        )}
+
         {activeTab === 'split' && (
           <div className="absolute inset-0 sa-view-panel-enter">
             <SplitStudioView language="bn" />
