@@ -93,12 +93,12 @@ LIFECYCLE_HOOKS = ("postinstall", "preinstall", "prepare", "prepack")
 HOOK_ALLOWLIST: dict[str, dict[str, str]] = {}
 
 # A3 presence pins: lockfiles that must never silently disappear.
+# Post-#4934: browser/cloudflare-worker and vscode/extension moved to their
+# sovereign satellite repos — their pins moved with them (never silently).
 LOCKFILE_PINS = (
     ".agents/skills/devtools-audit/package-lock.json",
-    "browser/cloudflare-worker/package-lock.json",
     "infrastructure/mcp-control-plane/package-lock.json",
     "studio/pnpm-lock.yaml",
-    "vscode/extension/package-lock.json",
 )
 
 _PRUNE_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__"}
