@@ -1,14 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
-import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles, LayoutDashboard } from 'lucide-react';
+import { Bot, Code, Columns, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
 import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
-import { GuestDashboard } from '../../components/guest/GuestDashboard';
 import { SplitStudioView } from '../../components/studio/SplitStudioView';
 import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
 import { MobileSimulator } from '../../components/customer/MobileSimulator';
 import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
-import { ThemePicker } from '../../components/theme/ThemePicker';
 
 // Honest preview contract: the preview tabs only make sense AFTER the AI has
 // generated real HTML and the user pressed Preview on a code block. Before that
@@ -148,8 +146,7 @@ const MobileEmptyState: React.FC<{
 export const AIStudio: React.FC = () => {
   const [input, setInput] = useState('');
   const [resumeConvId, setResumeConvId] = useState<string | null>(null);
-  // Default landing tab: 'dashboard' (GuestDashboard interface as requested by user)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'chat' | 'split' | 'preview' | 'mobile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'chat' | 'split' | 'preview' | 'mobile'>('split');
   // CHAT LANDING (owner decision 2026-10-24): Chat is the landing tab with a
   // local history sidebar (mainstream-AI pattern). Home and Prompt Library
   // left the rail; users enable features from Settings/Profile.
@@ -217,16 +214,7 @@ export const AIStudio: React.FC = () => {
         <div className="flex items-center gap-4 text-xs font-medium">
           <button 
             type="button"
-            onClick={() => setActiveTab('dashboard')}
-            aria-pressed={activeTab === 'dashboard'}
-            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'dashboard' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
-          >
-            <LayoutDashboard size={14} /> Workbench Dashboard
-          </button>
-          <button 
-            type="button"
             onClick={() => setActiveTab('split')}
-            aria-pressed={activeTab === 'split'}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'split' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)] font-semibold' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
             <Columns size={14} /> Split Cockpit (45/55)
@@ -234,7 +222,6 @@ export const AIStudio: React.FC = () => {
           <button 
             type="button"
             onClick={() => setActiveTab('chat')}
-            aria-pressed={activeTab === 'chat'}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'chat' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
             <Bot size={14} /> Chat Focused
@@ -242,7 +229,6 @@ export const AIStudio: React.FC = () => {
           <button 
             type="button"
             onClick={() => gotoSurface('preview')}
-            aria-pressed={activeTab === 'preview'}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'preview' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
             <Code size={14} /> Browser Preview
@@ -250,7 +236,6 @@ export const AIStudio: React.FC = () => {
           <button 
             type="button"
             onClick={() => gotoSurface('mobile')}
-            aria-pressed={activeTab === 'mobile'}
             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'mobile' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
           >
             <Smartphone size={14} /> Mobile Simulator
@@ -268,34 +253,22 @@ export const AIStudio: React.FC = () => {
           </button>
         </div>
         
-        <div className="flex items-center gap-2 sm:gap-4">
-          <ThemePicker />
-          <div className="hidden items-center gap-4 text-[10px] uppercase tracking-widest text-[var(--sa-ink-muted)] sm:flex">
+        <div className="hidden items-center gap-4 text-[10px] uppercase tracking-widest text-[var(--sa-ink-muted)] sm:flex">
           <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" />Agent: SupremeAI</span>
           <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-[var(--sa-primary)]" />Model: Configured backend</span>
           <span className="rounded-full border border-[var(--sa-border)] px-2 py-1 text-[var(--sa-ink-muted)]">Context ready</span>
-          </div>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 relative">
-        {activeTab === 'dashboard' && (
-          <div className="absolute inset-0 overflow-y-auto p-4 sm:p-6 sa-view-panel-enter">
-            <GuestDashboard
-              language="en"
-              isUserWorkspace={true}
-            />
-          </div>
-        )}
-
         {activeTab === 'split' && (
-          <div className="absolute inset-0 sa-view-panel-enter">
+          <div className="absolute inset-0">
             <SplitStudioView language="bn" />
           </div>
         )}
 
         {activeTab === 'chat' && (
-          <div className="absolute inset-0 flex gap-4 p-4 sa-view-panel-enter">
+          <div className="absolute inset-0 flex gap-4 p-4">
             {/* Unified Chat Phase 2: uses the canonical UnifiedChatPanel with live streaming,
                 thinking indicator, brand badge, and intent carry-over */}
             <aside className="hidden w-56 shrink-0 flex-col gap-2 md:flex" data-testid="chat-history-rail">
@@ -365,7 +338,7 @@ export const AIStudio: React.FC = () => {
         )}
 
         {activeTab === 'preview' && (
-          <div className="absolute inset-0 flex flex-col gap-3 p-4 sa-view-panel-enter">
+          <div className="absolute inset-0 flex flex-col gap-3 p-4">
             <div className="flex h-full min-h-0 w-full flex-col gap-2">
               {!hasPreview && (
                 <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
@@ -390,7 +363,7 @@ export const AIStudio: React.FC = () => {
         )}
 
         {activeTab === 'mobile' && (
-          <div className="absolute inset-0 flex flex-col gap-3 p-4 sa-view-panel-enter">
+          <div className="absolute inset-0 flex flex-col gap-3 p-4">
             <MobileAutoPanel
               hasPreview={hasPreview}
               code={code}

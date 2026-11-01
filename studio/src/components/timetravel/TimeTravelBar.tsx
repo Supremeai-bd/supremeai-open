@@ -1,5 +1,5 @@
 import React from 'react';
-import { History, ChevronLeft, ChevronRight } from 'lucide-react';
+import { History, ChevronLeft, ChevronRight, RotateCcw, Check, Clock } from 'lucide-react';
 import type { VersionSnapshot } from '../../types/worldclass';
 
 interface TimeTravelBarProps {
@@ -13,6 +13,7 @@ export const TimeTravelBar: React.FC<TimeTravelBarProps> = ({
   snapshots,
   currentVersionIndex,
   onSelectSnapshot,
+  language,
 }) => {
   const currentSnap = snapshots[currentVersionIndex] || snapshots[snapshots.length - 1];
 
@@ -29,64 +30,66 @@ export const TimeTravelBar: React.FC<TimeTravelBarProps> = ({
   };
 
   return (
-    <div className="bg-[#0b101b] border border-white/10 rounded-xl px-3 py-1.5 flex items-center justify-between gap-3 text-xs font-mono shadow-sm select-none">
+    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2 px-3 flex items-center justify-between gap-4 text-xs font-mono shadow-lg select-none">
       {/* Left: Time Travel Label & Controls */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 text-cyan-400 font-semibold">
+        <div className="flex items-center gap-1.5 text-indigo-400 font-bold">
           <History className="w-3.5 h-3.5" />
-          <span className="font-sans text-slate-200">History:</span>
+          <span className="hidden sm:inline font-sans text-white">Time-Travel:</span>
         </div>
 
-        <div className="flex items-center gap-0.5 bg-black/40 p-0.5 rounded-lg border border-white/5">
+        <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded border border-slate-800">
           <button
-            type="button"
             onClick={handlePrev}
             disabled={currentVersionIndex === 0}
-            className="p-1 text-slate-400 hover:text-white disabled:opacity-30 rounded hover:bg-white/5 transition-colors"
+            className="p-1 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800 transition-colors"
             title="Rewind to previous snapshot"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            type="button"
             onClick={handleNext}
             disabled={currentVersionIndex === snapshots.length - 1}
-            className="p-1 text-slate-400 hover:text-white disabled:opacity-30 rounded hover:bg-white/5 transition-colors"
+            className="p-1 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800 transition-colors"
             title="Fast-forward to next snapshot"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <span className="text-cyan-300 font-bold px-2 py-0.5 rounded-md bg-cyan-950/70 border border-cyan-800/60 text-[11px]">
+        <span className="text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/80 text-[11px]">
           {currentSnap.version}
         </span>
       </div>
 
-      {/* Middle: Snapshot Description */}
-      <div className="hidden md:flex items-center gap-2 truncate text-slate-400">
-        <span className="truncate text-[11px] text-slate-300">{currentSnap.title}</span>
-      </div>
-
-      {/* Right: Interactive Version Nodes */}
-      <div className="flex items-center gap-1">
+      {/* Middle: Snapshot Step Indicator Dots */}
+      <div className="flex items-center gap-2">
         {snapshots.map((snap, idx) => {
           const isActive = idx === currentVersionIndex;
           return (
             <button
-              key={snap.version}
-              type="button"
+              key={snap.id}
               onClick={() => onSelectSnapshot(idx)}
-              className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all ${
+              className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-all ${
                 isActive
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+                  ? 'bg-indigo-600 text-white font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
               }`}
+              title={`${snap.version}: ${snap.title}`}
             >
-              {snap.version}
+              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white' : 'bg-slate-600'}`} />
+              <span className="hidden md:inline">{snap.version}</span>
             </button>
           );
         })}
+      </div>
+
+      {/* Right: Snapshot Info summary */}
+      <div className="hidden lg:flex items-center gap-3 text-[11px] text-slate-400">
+        <span className="text-slate-300 truncate max-w-[200px]" title={currentSnap.title}>
+          {currentSnap.title}
+        </span>
+        <span className="text-slate-500">({currentSnap.timestamp})</span>
       </div>
     </div>
   );
