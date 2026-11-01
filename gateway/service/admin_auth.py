@@ -180,10 +180,13 @@ def get_jwt_secret() -> str:
     )
     if secret:
         return secret
-    env_name = os.environ.get("ENV", "local").lower()
+    env_name = os.environ.get("ENV", "").strip().lower()
     if env_name in ("local", "dev", "development", "test"):
         return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
-    return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Admin token signing is not configured.",
+    )
 
 
 def issue_admin_jwt(
