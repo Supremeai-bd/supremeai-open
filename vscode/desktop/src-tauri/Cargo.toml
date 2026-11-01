@@ -17,3 +17,10 @@ tauri-build = { version = "2", features = [] }
 [[bin]]
 name = "supremeai-desktop"
 path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+panic = "abort"
+strip = true
