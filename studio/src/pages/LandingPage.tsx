@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ConceptApp } from './concept/ConceptApp';
+import { DreamBuilderHero } from '../components/landing/DreamBuilderHero';
+import { NeuralConstellationCanvas } from '../components/common/NeuralConstellationCanvas';
 
 // ROOT-CAUSE FIX (Refs #876 / bridge-20261023-frontend-router-restore):
 // CTAs previously targeted /signup (a route that does not exist) and
@@ -29,19 +32,16 @@ export const LandingHeader: React.FC = () => {
       </Link>
 
       <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
-        {onLanding ? (
-          <a href="#features" className="hover:text-emerald-400 transition-colors">Features</a>
-        ) : (
-          <Link to="/#features" className="hover:text-emerald-400 transition-colors">Features</Link>
-        )}
-        {onLanding ? (
-          <a href="#demo" className="hover:text-emerald-400 transition-colors">Live Demo</a>
-        ) : (
-          <Link to="/#demo" className="hover:text-emerald-400 transition-colors">Live Demo</Link>
-        )}
-        <button type="button" onClick={() => navigate('/about')} className="hover:text-emerald-400 transition-colors">
-          Our Story
-        </button>
+        <Link to="/playground" className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors font-medium">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span>Guest Sandbox</span>
+        </Link>
+        <Link to="/chat" className="hover:text-cyan-300 transition-colors">
+          Live Assistant
+        </Link>
+        <Link to="/about" className="hover:text-cyan-300 transition-colors">
+          Our Vision
+        </Link>
       </nav>
 
       <div className="flex items-center gap-3">
@@ -81,20 +81,19 @@ export const LandingHeader: React.FC = () => {
       {/* Mobile dropdown menu */}
       {menuOpen && (
         <nav className="absolute top-16 left-0 right-0 z-modal flex flex-col gap-1 border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl md:hidden">
-          {onLanding ? (
-            <a href="#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</a>
-          ) : (
-            <Link to="/#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</Link>
-          )}
-          {onLanding ? (
-            <a href="#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</a>
-          ) : (
-            <Link to="/#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</Link>
-          )}
-          <button type="button" onClick={() => navTo('/about')} className="rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Our Story</button>
+          <Link to="/playground" onClick={closeMenu} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-cyan-300 hover:bg-white/5 transition-colors">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Guest Sandbox</span>
+          </Link>
+          <Link to="/chat" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors">
+            Live Assistant
+          </Link>
+          <button type="button" onClick={() => navTo('/about')} className="rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors">
+            Our Vision
+          </button>
           <div className="mt-2 flex flex-col gap-2 border-t border-white/10 pt-3">
             <button type="button" onClick={() => navTo('/login')} className="rounded-lg border border-white/10 px-3 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 transition-colors">Sign In</button>
-            <button type="button" onClick={() => navTo('/register')} className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity">Get Started</button>
+            <button type="button" onClick={() => navTo('/register')} className="rounded-lg bg-gradient-to-r from-cyan-500 to-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-cyan-500/20 hover:opacity-95 transition-opacity">Get Started</button>
           </div>
         </nav>
       )}
@@ -106,13 +105,9 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [typedText, setTypedText] = useState('');
-  // FRONTEND_SIMPLICITY rule 43 (jargon ban): user-facing demo copy must
-  // describe the user goal — "swarm" is on the banned list.
+  const [viewMode, setViewMode] = useState<'dream' | 'suite' | 'classic'>('dream');
   const fullText = 'What is the current health status of my AI assistants?';
 
-  // ROOT-CAUSE FIX (Our Story tab hash navigation): SPA pushState does not
-  // auto-scroll, so navigating to /#features or /#demo from another page
-  // needs an explicit scroll after the landing page mounts.
   useEffect(() => {
     if (!location.hash) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -125,7 +120,6 @@ export const LandingPage: React.FC = () => {
   }, [location.hash]);
 
   useEffect(() => {
-    // prefers-reduced-motion: skip the typing animation entirely
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) {
       setTypedText(fullText);
@@ -138,6 +132,40 @@ export const LandingPage: React.FC = () => {
     }, 75);
     return () => clearInterval(interval);
   }, []);
+
+  if (viewMode === 'dream') {
+    return (
+      <div className="relative min-h-screen w-full bg-[#080b12] text-slate-100 overflow-x-hidden">
+        <NeuralConstellationCanvas />
+        <LandingHeader />
+
+        {/* Living Dream Builder Interactive Hero */}
+        <div className="relative z-10 pb-16">
+          <DreamBuilderHero />
+        </div>
+      </div>
+    );
+  }
+
+  if (viewMode === 'suite') {
+    return (
+      <div className="relative min-h-screen w-full bg-[#080b12]">
+        {/* Quick view switch banner */}
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur-md">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>SupremeAI Live Suite</span>
+          <button
+            type="button"
+            onClick={() => setViewMode('dream')}
+            className="ml-2 rounded px-2 py-0.5 text-[11px] font-semibold text-cyan-400 hover:bg-white/10"
+          >
+            Vision View
+          </button>
+        </div>
+        <ConceptApp />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-purple-500/30">
@@ -165,17 +193,17 @@ export const LandingPage: React.FC = () => {
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
               type="button"
-              onClick={() => navigate('/chat')}
+              onClick={() => setViewMode('suite')}
               className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all"
             >
-              Try Live Guest Chat →
+              Open Live Suite →
             </button>
             <button
               type="button"
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/chat')}
               className="w-full sm:w-auto rounded-xl border border-white/10 bg-slate-900/80 px-6 py-3 font-semibold text-slate-200 hover:bg-slate-800 hover:text-white transition-all backdrop-blur-md"
             >
-              Create Free Account
+              Try Live Guest Chat
             </button>
           </div>
         </div>

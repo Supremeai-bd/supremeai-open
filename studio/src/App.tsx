@@ -14,7 +14,7 @@
  * landing a public-funnel change.
  */
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import "./styles/tokens.css";
 import { GlobalConfigInitializer } from "./components/core/GlobalConfigInitializer";
 import { setupGlobalFetchInterceptor } from "./utils/apiInterceptor";
@@ -189,6 +189,20 @@ const RouteFallback: React.FC = () => (
 );
 
 export const App: React.FC = () => {
+  const location = useLocation();
+  const routeStageRef = React.useRef<HTMLDivElement>(null);
+  const previousPathRef = React.useRef(location.pathname);
+
+  React.useEffect(() => {
+    if (previousPathRef.current === location.pathname) return;
+    previousPathRef.current = location.pathname;
+    const stage = routeStageRef.current;
+    if (!stage) return;
+    stage.classList.remove("sa-route-enter");
+    void stage.offsetWidth;
+    stage.classList.add("sa-route-enter");
+  }, [location.pathname]);
+
   return (
     <GlobalConfigInitializer>
       <ThemeSyncProvider>
@@ -197,6 +211,7 @@ export const App: React.FC = () => {
             <CommandBar />
           </React.Suspense>
           <React.Suspense fallback={<RouteFallback />}>
+            <div ref={routeStageRef} className="sa-route-stage sa-route-enter">
             <Routes>
               {/* Public Visitor Funnel — Cosmic landing at / (Zero-blocking; renders immediately without auth checks) */}
               <Route path="/" element={<LandingPage />} />
@@ -218,7 +233,7 @@ export const App: React.FC = () => {
                 element={
                   <PublicPageShell fullWidth>
                     <GuestDashboard
-                      language="bn"
+                      language="en"
                       onSwitchToUser={() => { window.location.href = '/register'; }}
                     />
                   </PublicPageShell>
@@ -289,6 +304,7 @@ export const App: React.FC = () => {
               {/* Honest 404 catch-all — never silently bounce to / */}
               <Route path="*" element={<ErrorPage code={404} />} />
             </Routes>
+            </div>
           </React.Suspense>
         </TranslationProvider>
       </ThemeSyncProvider>

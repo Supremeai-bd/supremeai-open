@@ -1,52 +1,111 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ServiceHealthBar } from './ServiceHealthBar';
+import { BrandMark } from '../../concept/components/BrandMark';
+import { ShieldCheck, Cpu, Terminal, ArrowUpRight } from 'lucide-react';
+import { NeuralConstellationCanvas } from '../common/NeuralConstellationCanvas';
 
-// ROOT-CAUSE UNIFY FIX (owner request: "login and signup 2 rokom na ase — jekono
-// akta r moto thakbe, sudu likha and box change hobe"):
-// বাংলা মন্তব্য: আগে LoginPage split-screen (hero + card) ছিল, কিন্তু RegisterPage
-// ছিল মাঝখানে সিঙ্গেল সেন্টার্ড কার্ড — দুটো পেজ দেখতে সম্পূর্ণ আলাদা লাগত।
-// এখন দুটো auth পেজই এই একই AuthShell শেয়ার করে: aurora wash + header +
-// বাম দিকের brand hero + ServiceHealthBar + ডান দিকের glass card + footer।
-// পেজভেদে পার্থক্য শুধু children (কার্ডের ভেতরের লেখা ও ইনপুট বক্স) —
-// ভবিষ্যতে কখনো আর আলাদা দেখাবে না। কোনো logic এখানে নেই, শুধু লেআউট।
 export const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-6 text-slate-100 sm:px-6 lg:px-12">
-      {/* Cosmic aurora wash (same family as LandingPage / guest chat) */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.16)_0%,transparent_60%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.10)_0%,transparent_50%)]" />
+    <main className="relative min-h-screen overflow-hidden bg-[#080b12] text-slate-100 selection:bg-cyan-500/30">
+      {/* Living Neural Constellation Background Canvas Animation */}
+      <NeuralConstellationCanvas />
 
-      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-dash flex-col">
-        <header className="flex items-center justify-between gap-4 py-2">
+      {/* Ambient background glows */}
+      <div className="ambient ambient-a" aria-hidden="true" style={{ top: '0%', right: '10%' }} />
+      <div className="ambient ambient-b" aria-hidden="true" style={{ bottom: '10%', left: '5%' }} />
+
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col justify-between px-4 py-4 sm:px-6 lg:px-8">
+        {/* Top Header */}
+        <header className="flex items-center justify-between border-b border-white/10 pb-3">
           <Link to="/" className="flex items-center gap-3" aria-label="SupremeAI home">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span>
-            <span className="font-semibold tracking-tight">SupremeAI</span>
+            <BrandMark />
           </Link>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Secure workspace access</span>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Autonomous Mesh Active
+            </span>
+            <Link
+              to="/"
+              className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:border-cyan-500/30 hover:text-white transition-colors"
+            >
+              <span>← Back to Home</span>
+            </Link>
+          </div>
         </header>
 
-        <div className="grid flex-1 items-center gap-8 py-8 lg:grid-cols-[1fr_minmax(0,26rem)] lg:gap-16 lg:py-12">
-          {/* Brand hero — identical on both auth pages, desktop-only */}
-          <section className="hidden max-w-xl lg:block">
-            <p className="mb-5 font-mono text-xs uppercase tracking-[0.2em] text-emerald-400">Your command center</p>
-            <h1 className="max-w-lg text-3xl font-semibold leading-tight tracking-[-0.04em] bg-gradient-to-b from-white via-slate-100 to-slate-400 bg-clip-text text-transparent xl:text-5xl">Turn intent into reliable action.</h1>
-            <p className="mt-6 max-w-md text-base leading-7 text-slate-400">Coordinate agents, automate repeatable work, and keep every important decision in view.</p>
-            <div className="mt-10 grid max-w-md grid-cols-3 gap-3" aria-label="SupremeAI capabilities">
-              {['Agents', 'Automations', 'Oversight'].map((item) => <div key={item} className="rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 text-xs font-medium text-slate-300 backdrop-blur-md">{item}</div>)}
+        {/* Center Grid - Balanced to fill screen without vertical overflow */}
+        <div className="my-auto grid flex-1 items-center gap-8 py-6 lg:grid-cols-12 lg:gap-12 lg:py-8">
+          {/* Left Column: Architectural Hero */}
+          <section className="hidden lg:col-span-7 lg:block space-y-6 pr-6">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-mono text-cyan-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                Sovereign Intelligence Network
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white xl:text-4xl leading-tight">
+                One signal.<br />
+                <span className="bg-gradient-to-r from-cyan-400 via-indigo-400 to-lime-300 bg-clip-text text-transparent">
+                  Every workspace.
+                </span>
+              </h1>
+              <p className="max-w-lg text-sm text-slate-400 leading-relaxed">
+                Connect your IDE, Terminal, and Studio to the SupremeAI federation with fail-closed security and instant multi-model consensus.
+              </p>
+            </div>
+
+            {/* Micro feature cards with theme styling */}
+            <div className="grid grid-cols-2 gap-3 max-w-lg">
+              <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3.5 backdrop-blur-md">
+                <div className="flex items-center gap-2 text-cyan-400 mb-1.5">
+                  <ShieldCheck size={16} />
+                  <span className="text-xs font-bold tracking-wider font-mono uppercase">Zero-Leak Guard</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">Fail-closed CAS authorization and cryptographically signed session tokens.</p>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3.5 backdrop-blur-md">
+                <div className="flex items-center gap-2 text-lime-400 mb-1.5">
+                  <Cpu size={16} />
+                  <span className="text-xs font-bold tracking-wider font-mono uppercase">Multi-Model Squad</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">Autonomous substitution between Gemini, Groq, Mistral & OpenRouter.</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-gradient-to-r from-cyan-950/20 via-slate-900/50 to-purple-950/20 p-3.5 backdrop-blur-md max-w-lg">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1.5">
+                <span className="flex items-center gap-2 text-slate-300">
+                  <Terminal size={14} className="text-cyan-400" /> CLI Ingress Available
+                </span>
+                <span className="text-emerald-400">0 behind main</span>
+              </div>
+              <code className="block text-[11px] font-mono text-cyan-300/90 bg-black/40 rounded-lg p-2 border border-white/5">
+                $ agy login --session-sync
+              </code>
             </div>
           </section>
 
-          {/* Auth card slot — children differ per page (text + boxes only) */}
-          <section className="w-full">
-            <div className="mb-4"><ServiceHealthBar /></div>
-            <div className="rounded-3xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.75))] p-6 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.25))] backdrop-blur-md sm:p-9">
+          {/* Right Column: Card Slot */}
+          <section className="w-full lg:col-span-5 max-w-md mx-auto">
+            <div className="mb-3">
+              <ServiceHealthBar />
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-slate-900/80 p-5 shadow-2xl shadow-cyan-950/40 backdrop-blur-xl sm:p-7">
               {children}
             </div>
           </section>
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 py-5 text-[10px] text-slate-500"><span>Private by design.</span><span className="font-mono">Build {typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : 'Dev'}</span></footer>
+        {/* Footer */}
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 py-4 text-xs text-slate-500">
+          <span>SupremeAI · Golden 6-Domain Federated Topology</span>
+          <div className="flex items-center gap-4">
+            <Link to="/docs" className="hover:text-cyan-400 transition-colors">Documentation</Link>
+            <Link to="/about" className="hover:text-cyan-400 transition-colors">Federation Status</Link>
+          </div>
+        </footer>
       </div>
     </main>
   );

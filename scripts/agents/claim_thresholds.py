@@ -19,6 +19,12 @@ ORPHAN_RELEASE_MINUTES = 30
 # War-evidence-এ release হচ্ছিল claim-এর ~১৬s-এর মধ্যেই।
 MIN_CLAIM_AGE_BEFORE_RELEASE_MINUTES = 5
 
+# Claim idle-release TTL (claim_ttl_expirer.py watchdog): status:claimed
+# issue-এর শেষ activity থেকে এই ঘণ্টা পার হলে watchdog lease ছেড়ে দেয়।
+# #57 SSOT আইন: expirer এই সংখ্যাটি এখান থেকে import করবে, নিজে হার্ডকোড নয় —
+# আগে claim_ttl_expirer.py-তে ৩-ঘণ্টা হার্ডকোড ছিল (dual-SSOT শ্রেণি)।
+CLAIM_IDLE_RELEASE_HOURS = 3
+
 # Receipt-coverage TTL (saturation livelock-এর রুট-কজ ফিক্স; GLM Agent 18,
 # Job 486801; প্রমাণ: #3634 saturation #2 + #3600 strand census): এর চেয়ে
 # পুরোনো খোলা bridge-WO receipt আর dispatch-demote করতে পারবে না — এমন

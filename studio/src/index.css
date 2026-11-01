@@ -237,6 +237,16 @@ body.sunset {
   --chat-bg: #1C120C;
   --chat-input-bg: #140B06;
   --waveform-bg: #24140C;
+  --sa-canvas: #0D0807;
+  --sa-surface: #1C120C;
+  --sa-surface-muted: #24140C;
+  --sa-ink: #FFF7ED;
+  --sa-ink-muted: #FB923C;
+  --sa-border: rgba(249, 115, 22, 0.2);
+  --sa-primary: #F97316;
+  --sa-primary-soft: rgba(249, 115, 22, 0.14);
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+  --sa-shadow-md: 0 18px 48px rgb(0 0 0 / 0.38);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -280,6 +290,16 @@ body.matrix {
   --chat-bg: rgba(3, 14, 5, 0.85);
   --chat-input-bg: #010802;
   --waveform-bg: rgba(2, 10, 3, 0.9);
+  --sa-canvas: #010802;
+  --sa-surface: #020C04;
+  --sa-surface-muted: #051408;
+  --sa-ink: #ECFDF5;
+  --sa-ink-muted: #6EE7B7;
+  --sa-border: rgba(16, 185, 129, 0.2);
+  --sa-primary: #10B981;
+  --sa-primary-soft: rgba(16, 185, 129, 0.14);
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.24);
+  --sa-shadow-md: 0 18px 48px rgb(0 0 0 / 0.4);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -323,6 +343,178 @@ body.matrix {
   background-image:
     radial-gradient(circle at 30% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
     radial-gradient(circle at 70% 70%, rgba(5, 150, 105, 0.06) 0%, transparent 40%);
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME 5–8: SYNTHWAVE / CYBERPUNK / MINIMAL / EMERALD
+   The catalog and picker are shared across web, desktop, and mobile.
+   ═══════════════════════════════════════════════════════ */
+:root[data-theme="synthwave"], html.synthwave, body.synthwave {
+  --background: #120b22;
+  --foreground: #fff7ff;
+  --neon-blue: #725cff;
+  --neon-purple: #ff4fd8;
+  --cyber-gray: #b9a7c7;
+  --card-bg: #1b1030;
+  --card-border: rgba(255, 79, 216, 0.22);
+  --sidebar-bg: #160b28;
+  --tabbar-bg: #25113d;
+  --border-color: rgba(255, 79, 216, 0.18);
+  --card-text: #dfcbe9;
+  --card-title-text: #fff7ff;
+  --input-bg: #0f091c;
+  --input-border: rgba(114, 92, 255, 0.4);
+  --panel-bg: #1b1030;
+  --bg-main: #120b22;
+  --text-main: #fff7ff;
+  --text-secondary: #d0b6e6;
+  --bg-panel: #1b1030;
+  --bg-cell: #25113d;
+  --border-accent: rgba(255, 79, 216, 0.28);
+  --accent-primary: #ff4fd8;
+  --accent-secondary: #725cff;
+  --node-bg: #1b1030;
+  --node-text: #fff7ff;
+  --node-border: rgba(255, 79, 216, 0.35);
+  --chat-bg: #1b1030;
+  --chat-input-bg: #0f091c;
+  --waveform-bg: #25113d;
+  --sa-canvas: #120b22;
+  --sa-surface: #1b1030;
+  --sa-surface-muted: #25113d;
+  --sa-ink: #fff7ff;
+  --sa-ink-muted: #d0b6e6;
+  --sa-border: rgba(255, 79, 216, 0.2);
+  --sa-primary: #ff4fd8;
+  --sa-primary-soft: rgba(255, 79, 216, 0.14);
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+  --sa-shadow-md: 0 18px 48px rgb(0 0 0 / 0.38);
+}
+
+:root[data-theme="cyberpunk"], html.cyberpunk, body.cyberpunk {
+  --background: #071316;
+  --foreground: #f4f7d4;
+  --neon-blue: #f5e642;
+  --neon-purple: #ff6b35;
+  --cyber-gray: #9cae9c;
+  --card-bg: #0d2022;
+  --card-border: rgba(245, 230, 66, 0.2);
+  --sidebar-bg: #081719;
+  --tabbar-bg: #132b2c;
+  --border-color: rgba(245, 230, 66, 0.16);
+  --card-text: #cbd8b3;
+  --card-title-text: #f4f7d4;
+  --input-bg: #061012;
+  --input-border: rgba(245, 230, 66, 0.35);
+  --panel-bg: #0d2022;
+  --bg-main: #071316;
+  --text-main: #f4f7d4;
+  --text-secondary: #b4c69f;
+  --bg-panel: #0d2022;
+  --bg-cell: #132b2c;
+  --border-accent: rgba(245, 230, 66, 0.25);
+  --accent-primary: #f5e642;
+  --accent-secondary: #ff6b35;
+  --node-bg: #0d2022;
+  --node-text: #f4f7d4;
+  --node-border: rgba(245, 230, 66, 0.34);
+  --chat-bg: #0d2022;
+  --chat-input-bg: #061012;
+  --waveform-bg: #132b2c;
+  --sa-canvas: #071316;
+  --sa-surface: #0d2022;
+  --sa-surface-muted: #132b2c;
+  --sa-ink: #f4f7d4;
+  --sa-ink-muted: #b4c69f;
+  --sa-border: rgba(245, 230, 66, 0.2);
+  --sa-primary: #f5e642;
+  --sa-primary-soft: rgba(245, 230, 66, 0.14);
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+  --sa-shadow-md: 0 18px 48px rgb(0 0 0 / 0.38);
+}
+
+:root[data-theme="minimal"], html.minimal, body.minimal {
+  --background: #f7f7f2;
+  --foreground: #1f2925;
+  --neon-blue: #176b5b;
+  --neon-purple: #587265;
+  --cyber-gray: #78857e;
+  --card-bg: #ffffff;
+  --card-border: #dfe6df;
+  --sidebar-bg: #fbfcf8;
+  --tabbar-bg: #eef2ec;
+  --border-color: #dfe6df;
+  --card-text: #5f6b64;
+  --card-title-text: #1f2925;
+  --input-bg: #ffffff;
+  --input-border: #cbd8ce;
+  --panel-bg: #ffffff;
+  --bg-main: #f7f7f2;
+  --text-main: #1f2925;
+  --text-secondary: #66736b;
+  --bg-panel: #ffffff;
+  --bg-cell: #eef2ec;
+  --border-accent: #cbd8ce;
+  --accent-primary: #176b5b;
+  --accent-secondary: #587265;
+  --node-bg: #ffffff;
+  --node-text: #1f2925;
+  --node-border: #cbd8ce;
+  --chat-bg: #ffffff;
+  --chat-input-bg: #eef2ec;
+  --waveform-bg: #eef2ec;
+  --sa-canvas: #f7f7f2;
+  --sa-surface: #ffffff;
+  --sa-surface-muted: #eef2ec;
+  --sa-ink: #1f2925;
+  --sa-ink-muted: #66736b;
+  --sa-border: #dfe6df;
+  --sa-primary: #176b5b;
+  --sa-primary-soft: #ddf3ea;
+  --sa-shadow-sm: 0 1px 2px rgb(17 22 21 / 0.05);
+  --sa-shadow-md: 0 14px 36px rgb(17 22 21 / 0.1);
+}
+
+:root[data-theme="emerald"], html.emerald, body.emerald {
+  --background: #061512;
+  --foreground: #e8fff8;
+  --neon-blue: #2dd4bf;
+  --neon-purple: #7dd3fc;
+  --cyber-gray: #83aaa0;
+  --card-bg: #0c211c;
+  --card-border: rgba(45, 212, 191, 0.2);
+  --sidebar-bg: #071b16;
+  --tabbar-bg: #103027;
+  --border-color: rgba(45, 212, 191, 0.16);
+  --card-text: #b8ded4;
+  --card-title-text: #e8fff8;
+  --input-bg: #04100d;
+  --input-border: rgba(45, 212, 191, 0.34);
+  --panel-bg: #0c211c;
+  --bg-main: #061512;
+  --text-main: #e8fff8;
+  --text-secondary: #9bc7bb;
+  --bg-panel: #0c211c;
+  --bg-cell: #103027;
+  --border-accent: rgba(45, 212, 191, 0.28);
+  --accent-primary: #2dd4bf;
+  --accent-secondary: #7dd3fc;
+  --node-bg: #0c211c;
+  --node-text: #e8fff8;
+  --node-border: rgba(45, 212, 191, 0.34);
+  --chat-bg: #0c211c;
+  --chat-input-bg: #04100d;
+  --waveform-bg: #103027;
+  --sa-canvas: #061512;
+  --sa-surface: #0c211c;
+  --sa-surface-muted: #103027;
+  --sa-ink: #e8fff8;
+  --sa-ink-muted: #9bc7bb;
+  --sa-border: rgba(45, 212, 191, 0.2);
+  --sa-primary: #2dd4bf;
+  --sa-primary-soft: rgba(45, 212, 191, 0.14);
+  --sa-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.24);
+  --sa-shadow-md: 0 18px 48px rgb(0 0 0 / 0.4);
 }
 
 @keyframes clouds-drift {
@@ -1240,4 +1432,23 @@ textarea:focus-visible,
 select:focus-visible {
   border-color: color-mix(in srgb, var(--neon-blue) 55%, transparent);
   transition: border-color 120ms ease-out;
+}
+
+
+/* Cross-surface route and Studio-view transitions */
+.sa-route-stage.sa-route-enter,
+.sa-view-panel-enter {
+  animation: sa-surface-enter 220ms cubic-bezier(.2, .75, .25, 1) both;
+}
+
+@keyframes sa-surface-enter {
+  from { opacity: 0; transform: translateY(6px); filter: blur(1px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sa-route-stage.sa-route-enter,
+  .sa-view-panel-enter {
+    animation: none;
+  }
 }

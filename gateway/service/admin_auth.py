@@ -180,13 +180,22 @@ def get_jwt_secret() -> str:
     )
     if secret:
         return secret
-    env_name = os.environ.get("ENV", "local").lower()
+    env_name = os.environ.get("ENV", "").strip().lower()
     if env_name in ("local", "dev", "development", "test"):
         return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
-    return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Admin token signing is not configured.",
+    )
 
 
-def issue_admin_jwt(uid: str, email: str, role: str = "admin", expiry_hours: int = DEFAULT_JWT_EXPIRY_HOURS) -> str:
+def issue_admin_jwt(
+    uid: str,
+    email: str,
+    role: str = "admin",
+    expiry_hours: int = DEFAULT_JWT_EXPIRY_HOURS,
+    tenant_id: str | None = None,
+) -> str:
     """Issue a standard RFC 7519 HS256 JSON Web Token."""
     now = int(time.time())
     payload = {
@@ -199,6 +208,8 @@ def issue_admin_jwt(uid: str, email: str, role: str = "admin", expiry_hours: int
         "exp": now + 3600 * expiry_hours,
         "jti": uuid.uuid4().hex,
     }
+    if tenant_id is not None:
+        payload["tenant_id"] = tenant_id
     header = {"alg": "HS256", "typ": "JWT"}
     header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
@@ -230,8 +241,13 @@ def verify_admin_jwt(token: str) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload JSON") from exc
 
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
     now = int(time.time())
-    if "exp" in payload and payload["exp"] < now:
+    expiry = payload.get("exp")
+    if isinstance(expiry, bool) or not isinstance(expiry, int):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expiry is required")
+    if expiry <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
 
     return payload
@@ -405,6 +421,242 @@ class AdminTotpVerifyRequest(BaseModel):
     remember_browser: bool = Field(default=False, description="Persist trusted browser session")
 
 
+class TenantAdminLoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=1, max_length=1024)
+
+
+def _clean_tenant_id(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if (
+        not candidate
+        or len(candidate) > 128
+        or not candidate[0].isascii()
+        or not candidate[0].isalnum()
+        or any(not char.isascii() or not (char.isalnum() or char in "_-") for char in candidate)
+    ):
+        return None
+    return candidate
+
+
+def _validated_bearer_claims(authorization: str | None) -> dict[str, Any]:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
+    claims = verify_admin_jwt(authorization.split(" ", 1)[1])
+    if claims.get("type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token.")
+    return claims
+
+
+def _require_tenant_admin(authorization: str | None) -> tuple[dict[str, Any], str]:
+    claims = _validated_bearer_claims(authorization)
+    tenant_id = _clean_tenant_id(claims.get("tenant_id"))
+    if claims.get("role") != "tenant_admin" or not tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant administrator access required.")
+    return claims, tenant_id
+
+
+def _require_platform_owner(authorization: str | None) -> dict[str, Any]:
+    claims = _validated_bearer_claims(authorization)
+    email = str(claims.get("email") or "").strip().lower()
+    allowed = {item.lower() for item in _get_admin_emails()}
+    if claims.get("role") != "admin" or not email or email not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform owner access required.")
+    return claims
+
+
+def _supabase_base_url() -> str:
+    value = get_vault_secret("SUPABASE_URL") or ""
+    if not value.startswith("https://"):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant administration is unavailable.")
+    return value.rstrip("/")
+
+
+async def _supabase_password_login(email: str, password: str) -> dict[str, Any]:
+    import httpx
+
+    base_url = _supabase_base_url()
+    api_key = get_vault_secret("SUPABASE_ANON_KEY") or get_vault_secret("SUPABASE_KEY")
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant authentication is unavailable.")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0)) as client:
+            response = await client.post(
+                f"{base_url}/auth/v1/token",
+                params={"grant_type": "password"},
+                headers={"apikey": api_key, "Content-Type": "application/json"},
+                json={"email": email, "password": password},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("Supabase tenant authentication request failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant authentication is unavailable.") from None
+    if response.status_code in (400, 401):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+    if not response.is_success:
+        logger.warning("Supabase tenant authentication returned HTTP %s", response.status_code)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant authentication is unavailable.")
+    try:
+        auth_result = response.json()
+    except ValueError:
+        auth_result = None
+    if not isinstance(auth_result, dict):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+    if auth_result.get("mfa_required") or auth_result.get("mfa") or auth_result.get("mfa_factors"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Additional Supabase verification is required and cannot be completed in this sign-in flow.",
+        )
+    user = auth_result.get("user")
+    if not isinstance(user, dict):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+    return user
+
+
+async def _supabase_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
+    import httpx
+
+    if table not in {"tenant_limits", "tenant_usage"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported tenant data request.")
+    base_url = _supabase_base_url()
+    service_key = get_vault_secret("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant administration is unavailable.")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0)) as client:
+            response = await client.get(
+                f"{base_url}/rest/v1/{table}",
+                params=params,
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("Supabase tenant data request failed for %s: %s", table, type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant data is temporarily unavailable.") from None
+    if not response.is_success:
+        logger.warning("Supabase tenant data query for %s returned HTTP %s", table, response.status_code)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant data is temporarily unavailable.")
+    try:
+        rows = response.json()
+    except ValueError:
+        rows = None
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Tenant data is temporarily unavailable.")
+    return rows
+
+
+async def _tenant_record(tenant_id: str) -> dict[str, Any] | None:
+    rows = await _supabase_rows(
+        "tenant_limits",
+        {
+            "select": "tenant_id,org_name,billing_tier,created_at,requests_per_minute,max_tokens_per_day,max_concurrent_sessions",
+            "tenant_id": f"eq.{tenant_id}",
+            "limit": "1",
+        },
+    )
+    return rows[0] if rows else None
+
+
+async def _tenant_usage(tenant_id: str) -> dict[str, Any]:
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    rows = await _supabase_rows(
+        "tenant_usage",
+        {
+            "select": "tenant_id,requests_count,tokens_used,cost_incurred",
+            "tenant_id": f"eq.{tenant_id}",
+            "date": f"eq.{today}",
+            "limit": "1",
+        },
+    )
+    row = rows[0] if rows else {}
+    return {
+        "tenant_id": tenant_id,
+        "requests_today": int(row.get("requests_count") or 0),
+        "tokens_today": int(row.get("tokens_used") or 0),
+        "cost_today": float(row.get("cost_incurred") or 0.0),
+    }
+
+
+@router.post("/tenant-login")
+async def tenant_admin_login(payload: TenantAdminLoginRequest):
+    email = payload.email.strip().lower()
+    if not email or any(ord(char) < 32 for char in email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Valid email is required.")
+    user = await _supabase_password_login(email, payload.password)
+    app_metadata = user.get("app_metadata")
+    if not isinstance(app_metadata, dict) or app_metadata.get("role") != "tenant_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant administrator access required.")
+    tenant_id = _clean_tenant_id(app_metadata.get("tenant_id"))
+    uid = user.get("id")
+    if not tenant_id or not isinstance(uid, str) or not uid.strip():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant administrator assignment is not configured.")
+    tenant = await _tenant_record(tenant_id)
+    if tenant is None or _clean_tenant_id(tenant.get("tenant_id")) != tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant administrator assignment is not configured.")
+    session_email = str(user.get("email") or email).strip().lower()
+    token = issue_admin_jwt(
+        uid=uid.strip(),
+        email=session_email,
+        role="tenant_admin",
+        expiry_hours=1,
+        tenant_id=tenant_id,
+    )
+    return {"status": "authenticated", "token": token, "role": "tenant_admin", "email": session_email}
+
+
+@router.get("/tenant-dashboard")
+async def tenant_admin_dashboard(authorization: str | None = Header(None)):
+    _claims, tenant_id = _require_tenant_admin(authorization)
+    tenant = await _tenant_record(tenant_id)
+    if tenant is None or _clean_tenant_id(tenant.get("tenant_id")) != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant dashboard is unavailable.")
+    return {"scope": "tenant", "role": "tenant_admin", "tenant": tenant, "usage": await _tenant_usage(tenant_id)}
+
+
+@router.get("/tenant-overview")
+async def platform_tenant_overview(authorization: str | None = Header(None)):
+    _require_platform_owner(authorization)
+    tenants = await _supabase_rows(
+        "tenant_limits",
+        {
+            "select": "tenant_id,org_name,billing_tier,created_at,requests_per_minute,max_tokens_per_day,max_concurrent_sessions",
+            "order": "created_at.desc",
+            "limit": "1000",
+        },
+    )
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    usage_rows = await _supabase_rows(
+        "tenant_usage",
+        {"select": "tenant_id,requests_count,tokens_used,cost_incurred", "date": f"eq.{today}", "limit": "1000"},
+    )
+    usage_by_tenant = {
+        str(row.get("tenant_id")): {
+            "tenant_id": str(row.get("tenant_id")),
+            "requests_today": int(row.get("requests_count") or 0),
+            "tokens_today": int(row.get("tokens_used") or 0),
+            "cost_today": float(row.get("cost_incurred") or 0.0),
+        }
+        for row in usage_rows
+        if row.get("tenant_id")
+    }
+    safe_tenants = [
+        {key: row.get(key) for key in (
+            "tenant_id", "org_name", "billing_tier", "created_at",
+            "requests_per_minute", "max_tokens_per_day", "max_concurrent_sessions",
+        )}
+        for row in tenants
+        if _clean_tenant_id(row.get("tenant_id"))
+    ]
+    usages = [
+        usage_by_tenant.get(
+            str(row["tenant_id"]),
+            {"tenant_id": str(row["tenant_id"]), "requests_today": 0, "tokens_today": 0, "cost_today": 0.0},
+        )
+        for row in safe_tenants
+    ]
+    return {"scope": "platform", "total": len(safe_tenants), "tenants": safe_tenants, "usages": usages, "truncated": len(tenants) == 1000}
+
+
 # --- Endpoint Handlers ---
 
 @router.post("/login")
@@ -547,10 +799,7 @@ async def admin_totp_setup(request: Request):
     """Initiate TOTP setup, generating a fresh secret and provisioning URI."""
     env_name = os.environ.get("ENV", "local").lower()
     if env_name not in ("local", "dev", "development", "test"):
-        auth = request.headers.get("authorization")
-        if not auth or not auth.lower().startswith("bearer "):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
-        verify_admin_jwt(auth.split(" ", 1)[1])
+        _require_platform_owner(request.headers.get("authorization"))
     secret = generate_totp_secret()
     recovery_codes = [secrets.token_hex(4).upper() for _ in range(4)]
     email = os.environ.get("ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL)
@@ -643,7 +892,7 @@ async def list_trusted_browsers(authorization: str | None = Header(None)):
     """List active trusted browsers for the authenticated admin."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
-    payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+    payload = _require_platform_owner(authorization)
     uid = payload.get("uid") or payload.get("sub")
     browsers = list_trusted_browsers_for_user(uid) if list_trusted_browsers_for_user else []
     return {"status": "ok", "browsers": browsers}
@@ -654,7 +903,7 @@ async def revoke_trusted_browser(browser_id: str, authorization: str | None = He
     """Revoke a specific trusted browser."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
-    payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+    payload = _require_platform_owner(authorization)
     uid = payload.get("uid") or payload.get("sub")
     revoked = revoke_trusted_browser_by_id(uid, browser_id) if revoke_trusted_browser_by_id else False
     return {"status": "ok", "message": f"Browser {browser_id} revoked.", "revoked": revoked}
@@ -677,7 +926,7 @@ async def revoke_all_trusted_browsers(
     কোনোটাই না থাকলে 401 (আগের মতোই fail-closed)।
     """
     if authorization and authorization.startswith("Bearer "):
-        jwt_payload = verify_admin_jwt(authorization.split(" ", 1)[1])
+        jwt_payload = _require_platform_owner(authorization)
         uid = jwt_payload.get("uid") or jwt_payload.get("sub")
         count = revoke_all_trusted_browsers_for_user(uid) if revoke_all_trusted_browsers_for_user else 0
         if response:

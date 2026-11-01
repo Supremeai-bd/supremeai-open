@@ -9,9 +9,9 @@
 | Agent | GLM Agent 09 |
 | Job ID | 486738 |
 | MCP surface | zero-credential tower handshake (`supremeai-control-tower`) |
-| Cycle date | 2026-10-31 |
+| Cycle date | 2026-11-01 |
 
-## Landed receipts (cycles 1-9; details live in git history)
+## Landed receipts (cycles 1-12; details live in git history)
 
 | PR | WO | Root cause closed | Proof at landing |
 |---|---|---|---|
@@ -24,15 +24,24 @@
 | #4392 (d853fd4) | — | cycle 7 verified-clean: 4 heals hold, 3 WOs feedback-closed, ratchet 343 honest | 2272 passed / 0 failed |
 | #4423 (caf5688) | #4422 | no-secret-logs gate false-positive class (3 instances, one root): identifier-suffix escape (scanner+shield), dynamic OTP vector, fixture-file head declaration | 2295 passed / 0 failed |
 | #4445 (8a68e34) | #4444 | shield whole-tree precision 58 FP → 0: value-shape guards before entropy, scanner escapes honored, PEM needs base64 body | 2312 passed / 0 failed |
-| #4470 (2933b42) | #4469 | stale-branch pruner fail-open → fail-closed: unknown protected set ≠ empty (gh missing/auth/ratelimit/non-list JSON), abort exit 1 deletes nothing; 12 offline tests; class-scan: swallow-to-empty only in unwired siblings | 2325 passed / 0 failed |
+| #4470 (2933b42) | #4469 | stale-branch pruner fail-open → fail-closed: unknown protected set ≠ empty, abort exit 1 deletes nothing; 12 offline tests | 2325 passed / 0 failed |
+| #4502 (ce848ef) | — | ingress opener divergence lie: unparseable rev-list folded to behind=0 and the PR body asserted "0 behind"; now unknown aborts no-push/no-PR; 16 hermetic tests | 2341 passed / 0 failed |
+| #4516 (e3c3095) | #4515 | claim watchdog fail-closed: fire-and-forget gh mutations printed "Released" on failure (comment was posted before the edit), non-list payload crashed, one bad updatedAt killed the whole scan; now edit-first honest ordering + per-issue isolation + #57 TTL SSOT (CLAIM_IDLE_RELEASE_HOURS); 14 tests | 2355 passed / 0 failed |
 
-## Open handoff
+## Handoff closed (cycle 16)
 
-- Issue #4471 (P1-major): pipeline.yml fast-lint must run `generate_script_index.py --check` (fail-closed) instead of regen `|| true`; bridge lane cannot write `.github/` (protected path) — Tier-1-evidenced one-liner filed for the maintainer lane. Corroborated by GLM Agent 14 (#4474); bridge WO coverage in flight (#4482, #4489).
+- Issue #4471 class-killed on main (25604a3, PR #4612, GLM Agent 10): `generate_script_index.py --check-committed` regenerates in-memory and diffs against the git HEAD blob, fail-closed second layer in deploy_preflight Step 1 — workflow ordering no longer defeats the gate. Verified locally this cycle: rc=0 on fresh HEAD (559 scripts, 6 hand sections).
 
-## Cycle 11 (01:09+08 dispatch) — ingress opener verification lie closed
+## Cycle 13 (03:09) — verified-clean no-pick: tower 429 flap survived (board dark = UNSEEN, nothing certified); rerun healthy 0/5; census 2355/0 at 2f1268c; #4471 handoff stands (coverage #4482/#4489 then #4533/#4528).
 
-1. Dispatch: claimable 1 (#4471) but receipt-coverage demoted (anti-stampede U5: WOs #4482/#4489 in flight). Census at dbbc05f green (2325/0) → fresh guard-vs-test sweep: exactly one wired-but-untested candidate left — `auto_bridge_pr_opener.py` (356 lines, scheduled GH_TOKEN job, force-pushes agent branches).
-2. Root cause: unparseable `git rev-list --count` folded to `behind = 0` — unknown divergence treated as fresh, rebase skipped, and the PR body then hard-asserted "[x] Pre-Push Rebase Invariant verified (0 commits behind)". Same family as cycle 10's pruner (unknown ≠ safe-known); now fail-closed: unknown aborts, no push, no PR. Class-close scan: the default-0-on-parse-failure pattern is live only here.
-3. New face: tests/test_auto_bridge_pr_opener.py — 16 hermetic tests on the run_cmd seam (fail-closed divergence, fresh-no-push, behind → rebase + force-with-lease, conflict/corruption closures, dry-run purity, stranded rules: header-over-fallback, report-only filter, dedupe, existing-PR skip, gh-failure, main flows).
-4. Verification: 16/16 targeted; census 2341 passed / 13 skipped / 0 failed (CVE-guard duo untouched).
+## Cycle 14 (04:09) — verified-clean no-pick: CI-gate local rehearsal 4/4 PASS at db943b7 (boundary_sanitization, contract_parity 3/3, frontend_performance, deploy_preflight step1-syntax); census 2355/13/0; standing watches re-verified (siblings dormant, loop #57-SSOT-compliant, tower 429 classification deliberate).
+
+## Cycle 15 (05:09) — verified-clean no-pick: local hook barrier proven green (pre-commit 7/7, pre-push 9/9 self-tests); census 2355/13/0 at edc5b62; orphaned pre_commit_hook.py documented, no churn.
+
+## Cycle 16 (07:09) — verified-clean no-pick: #4471 watch closed
+
+1. Dispatch: claimable 0/5 (post MEGA-REAP board 17→2); heartbeat survived 503→502 brownout (90s backoff, board never certified dark).
+2. Census 2358 passed / 13 skipped / 0 failed (baseline 2355 → +3 upstream tests, no red), EXIT=0.
+3. CI-gate rehearsal 5/5 PASS @ 3afd1c1 — gates relocated `scripts/agents/` → `scripts/ci/` (boundary 21/21, contract_parity 0 byte-drift, deploy_preflight step1 2332 py files / 0 errors, frontend_perf PASS) + the NEW #4612 `--check-committed` gate PASS.
+4. Standing watch: c12 claim_ttl_expirer fix intact (TTL SSOT True, OSError fail-closed True).
+5. No agent-lane defect this cycle; no churn (Invariant 7).

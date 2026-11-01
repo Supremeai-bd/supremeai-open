@@ -1,9 +1,13 @@
+import { speakText, generateLocalReply } from './companion/speechHelper';
+import HolographicHero from './companion/HolographicHero';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 // @ts-ignore
 import { Channel } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import AdminDashboard from './admin/AdminDashboard';
+import UserSessionPanel from './auth/UserSessionPanel';
 
 type Role = 'user' | 'assistant';
 type IconName = 'chat' | 'folder' | 'search' | 'flask' | 'activity' | 'settings' | 'plus' | 'clock' | 'chevron' | 'send' | 'spark' | 'panel' | 'sun' | 'close';
@@ -118,6 +122,9 @@ export default function App() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [hologramOpen, setHologramOpen] = useState(true);
+  const [hologramDocked, setHologramDocked] = useState(false);
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>('idle');
   const composer = useRef<HTMLTextAreaElement>(null);
   const endOfMessages = useRef<HTMLDivElement>(null);
@@ -298,6 +305,7 @@ export default function App() {
           <button className="nav-item nav-item--disabled" disabled title="Projects are planned for the next build milestone"><Icon name="folder" /><span>Projects</span><span className="nav-soon">SOON</span></button>
           <button className="nav-item nav-item--disabled" disabled title="Research workflows are not connected in this first build"><Icon name="flask" /><span>Deep research</span><span className="nav-soon">SOON</span></button>
           <button className="nav-item nav-item--disabled" disabled title="Tower agent controls are not connected in this first build"><Icon name="activity" /><span>Agent activity</span><span className="nav-soon">SOON</span></button>
+          <button className="nav-item" onClick={() => setAdminOpen(true)}><Icon name="settings" /><span>Admin console</span></button>
         </div>
 
         <div className="history-head"><span className="section-label">RECENT CHATS</span><span className="history-count">{savedChats.length.toString().padStart(2, '0')}</span></div>
@@ -315,7 +323,7 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <div className="build-card"><span className="build-mark"><Icon name="spark" size={15} /></span><div><strong>FIRST BUILD</strong><p>Chat is live. Other modules are staged, not simulated.</p></div></div>
-          <button className="profile-row" type="button"><span className="profile-dot">G</span><span><strong>Guest user</strong><small>Local chat history</small></span><Icon name="settings" size={17} /></button>
+          <UserSessionPanel />
         </div>
       </aside>
 
@@ -370,6 +378,16 @@ export default function App() {
         </div>
       </main>
       {commandOpen && <div className="command-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandOpen(false); }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette"><div className="command-heading"><span>COMMAND PALETTE</span><kbd>ESC</kbd></div><button onClick={startNewChat}><Icon name="plus" size={16} /><span><strong>New chat</strong><small>Start a fresh conversation</small></span><kbd>⌘ N</kbd></button><button onClick={() => { setCommandOpen(false); document.querySelector<HTMLInputElement>('#history-search')?.focus(); }}><Icon name="search" size={16} /><span><strong>Search chats</strong><small>Find by title or message content</small></span><kbd>⌘ K</kbd></button><button onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setCommandOpen(false); }}><Icon name="sun" size={16} /><span><strong>Switch theme</strong><small>Use the {theme === 'dark' ? 'light' : 'dark'} workspace theme</small></span></button><button onClick={() => { setSidebarOpen(!sidebarOpen); setCommandOpen(false); }}><Icon name="panel" size={16} /><span><strong>{sidebarOpen ? 'Collapse' : 'Open'} sidebar</strong><small>Change workspace navigation visibility</small></span></button></section></div>}
+      {hologramOpen && (
+        <HolographicHero
+          isDocked={hologramDocked}
+          onToggleDock={() => setHologramDocked(!hologramDocked)}
+          onClose={() => setHologramOpen(false)}
+          latestReply={messages.filter(m => m.role === 'assistant').slice(-1)[0]?.content}
+          onSendPrompt={(p) => void sendMessage(p)}
+        />
+      )}
+      {adminOpen && <AdminDashboard onClose={() => setAdminOpen(false)} />}
     </div>
   );
 }
