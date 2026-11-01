@@ -817,7 +817,7 @@ jobs:
       - name: Check if Studio exists
         id: check_studio
         run: |
-          if [ -d "studio" ]; then
+          if [ -d "studio/src" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
