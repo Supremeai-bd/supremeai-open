@@ -423,8 +423,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     hand_blocks = extract_hand_blocks(target)
     content, _ = compose_markdown(entries, skipped_empty, hand_blocks)
 
-    for warning in warn_stale_hand_refs(hand_blocks, target):
+    stale_hand = warn_stale_hand_refs(hand_blocks, target)
+    for warning in stale_hand:
         print(f"⚠️  STALE HAND SECTION: {warning}", file=sys.stderr)
+
+    # Fail-closed class-kill (2026-11-02, prune-wave residue): a purge can
+    # regenerate the auto sections and still leave hand blocks pointing at
+    # pruned paths — the preserved-verbatim design keeps the stale blocks in
+    # every future regen, so the rot passes every match check and was only
+    # visible as this advisory. Check modes are the enforcement surface:
+    # dead hand refs now fail them, so a purge lands green only when the
+    # hand sections are true (the guard layer in deploy_preflight_guard.py
+    # Step 1 inherits the failure via --check/--check-committed).
+    if (args.check or args.check_committed) and stale_hand:
+        mode = "--check" if args.check else "--check-committed"
+        print(f"FAIL ({mode}): {len(stale_hand)} hand section(s) reference paths that "
+              f"no longer exist — fix the hand blocks in {target.name}.")
+        return 1
 
     if args.check:
         try:
