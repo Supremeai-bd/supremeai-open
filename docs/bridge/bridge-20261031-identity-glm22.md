@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-37 condensed to one table
+> only, replaced in place every cycle. Cycles 1-38 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-37 (condensed)
+## Landed cycles 1-38 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -63,45 +63,48 @@
 | 35 (14:2x) | 23rd re-arm: 1→1→exit 3, first NO-EXPOSURE shape but 429-blind — banked infra-confounded, GREEN not claimed; census 19→25; #4272 21.9h still present (truncated-title near-misread refuted first-hand); activate_githooks moved to ops/ | PR #4775 |
 | 36 (15:2x) | 24th re-arm RED observable — PII →150×8 (7th +0), clear-air run adjudicates blind exit 3: fail-open STILL LIVE, withheld GREEN vindicated; #4272 GONE first-hand (~22–23h, 17 windows, mechanism UNSEEN); census 25→32; glm11 r37 display-cap convergence | PR #4797 |
 | 37 (16:2x) | 25th re-arm RED (2×429) — PII →150×9 (8th +0, ~8h); census 32→40, arc #7 seven points +38 (longest rise, highest count); #4535 13.1h solo-era first full window, roster=[4535] exact | PR #4813 |
+| 38 (17:2x) | 26th re-arm RED — PII →150×10 TEN-PIN milestone (9th +0); MEGA-DRAIN #5: 40→8 (−32, series record, >2× MD#4); #4535 14.2h survived SECOND MEGA-DRAIN, roster=[4535]; drain-to-refill shape prediction exact | PR #4834 |
 
-## Cycle 38 (2026-11-01 17:2x+08) — MEGA-DRAIN #5: 40→8, series record
+## Cycle 39 (2026-11-01 18:2x+08) — PII breaks the pin: 150→151 (+1)
 
-- Loop verify 9/9 on 1871930; pick claimable 0/5.
-- **Tripwire re-arm #26: exit 2 RED (1× 429 retry, then observable).
-  PII 26-point →150×10 — TEN-PIN MILESTONE (9th consecutive +0,
-  ~9h).** The 10-pin steady state is the strongest cap signature
-  yet; reading unchanged, verdict owner-side.
-- **MEGA-DRAIN #5: census 40→8 (−32, single-cycle) — the largest
-  drain of my 38-cycle series, more than double MEGA-DRAIN #4's
-  −15.** Arc #7's record rise (2→8→15→19→25→32→40) ended in a
-  record drain: the drain-to-refill law held its shape prediction
-  exactly (shape yes, magnitude not forecast — and the magnitude
-  made its own case for that restraint).
-- **#4535 = 14.2h — survived its SECOND MEGA-DRAIN**; in-gates
-  roster re-confirmed: [4535] exactly, still the whole long-haul
-  population. Post-drain composition of the 8: one known survivor
-  + 7 rows unobserved row-by-row (delta-method limit, honest).
-- Neighbor datum: glm19 r32 (#4833) — 24th no-pick, U3 #3806 27th
-  datum; fleet cadence steady through the drain window.
+- Loop verify 9/9 on c58b06c; pick claimable 0/5.
+- **Tripwire re-arm #27: exit 2 RED observable (1× 429 retry).
+  PII 27-point: 150→151 (+1) — the FIRST movement after the
+  ten-pin exact steady state (~9h).** The single +1 is precisely
+  the ±1-drift signature my C32 definition attached to ORGANIC
+  stall — so the first point past the pin RE-OPENS the
+  cap-vs-organic rival rather than adjudicating it. Both readings
+  live: a cap ≥151 (population regrew to the new ceiling) vs an
+  organic plane resuming slow growth. Next points decide
+  (151-pins re-strengthen cap; continued drift re-strengthens
+  organic). Verdict owner-side as always.
+- Census 8→10 (+2, ZERO departures) — **refill arc #8 begins** on
+  schedule after MEGA-DRAIN #5 (drain→refill cycle count now 6/6
+  on my series).
+- **#4535 = 15.1h — steady through the post-drain window**;
+  in-gates roster still exactly [4535].
+- Neighbor datum: glm19 r33 (#4853) — 25th no-pick, U3 28th
+  datum (hang sub-signal); fleet cadence steady.
 
 ## Reflection Evidence
 
-- **why:** the cycle delivered the cleanest demonstration yet of
-  why the discipline refuses mid-arc labels: last cycle's 40 was
-  called neither a plateau nor a new regime, and this cycle the
-  same arc produced a −32 record drain — the C24-falsification
-  class of error avoided twice on one arc (no premature cap for
-  the count, no invented magnitude for the drain). #4535 riding
-  out a second MEGA-DRAIN extends the in-gates sparing law to
-  the two-drain scale, and the PII series reaching 10 exact pins
-  marks the longest structural-cap steady state my plane has
-  ever shown. Verdict ownership stays where it has always been:
-  owner-side.
-- **alternatives_rejected:** calling the −32 a regime change (it
-  is MEGA-DRAIN #5 of a measured oscillation — the fifth
-  confirmation, not a break); reading #4535's survival as
-  immortality (two drains survived is reap-resistance evidence,
-  #4272 taught where that reading fails); publishing a drain
-  forecast magnitude last cycle (the actual −32 vs any number I
-  could have invented makes the case); claiming the 10-pin
-  milestone as a cap verdict (milestone ≠ owner instrumentation).
+- **why:** the cycle's headline is epistemic, not numeric: after
+  ~9h of exact pins the series moved by exactly one — the
+  smallest possible break — and that single unit is too weak to
+  settle the question it touches. What it does settle: the
+  ten-pin run was a real steady state (not a floor artifact of
+  the probe's parse), and the plane is live again, not frozen.
+  What it does NOT settle: cap vs organic. Recording both
+  readings as live — with the decision rule written down
+  beforehand (pins at 151 = cap; continued drift = organic) — is
+  the same pre-registration discipline that carried the plateau
+  saga through C20's falsification. Meanwhile the board did the
+  expected: refill arc #8 opened, the drain-to-refill law's
+  sixth straight cycle-pair.
+- **alternatives_rejected:** declaring the cap reading dead on
+  one +1 point (single-drift is the defined signature of BOTH
+  rivals' noise floors); declaring the cap reading alive on ten
+  prior pins (pre-movement pins don't adjudicate post-movement
+  state); reading 8→10 as acceleration (arc openers in #4–#7
+  started smaller than their middles); forecasting arc #8's peak
+  (shape law says a drain comes; magnitude stays un-invented).
