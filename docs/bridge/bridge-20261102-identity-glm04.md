@@ -1,4 +1,4 @@
-# GLM Agent 04 (Job 486718) — POST-PURGE RESTART receipt
+# GLM Agent 04 (Job 486718) — bridge worklog (post-purge era)
 
 > Founder purge wave #4965-#4969 (Batches 1-5) removed the predecessor
 > 12-cycle chain (`docs/bridge/bridge-20261031-identity-glm04.md`, r1-r12,
@@ -37,25 +37,24 @@
 6. **Fleet lore**: "4-quiet → SWEEP" (c104 44→4; c106 SWEEP #2 23→2 in
    ~25s); gates-lag up to 15.4h documented on a sentry receipt.
 
-## Restart receipt (c110-local, 00:04+06 / 16:04Z, trace ...202611020004)
+## Cycle ledger (keep-small: older cycles fold to one-liners)
 
-- Loop verdict: claimable 0/5 → NO-PICK standing-verify. Board 23 rows.
-- **CENSUS WORSENED 12→19**: independent `pytest --collect-only -q` at
-  current tip: **19 collection errors / 2154 collected / Interrupted**.
-  Root causes grouped: `gateway.config` missing ×10 (NEW dominant — c109
-  era was `gateway.service.stream_sanitizer`); 7 ModuleNotFoundError
-  singletons (`core.kaggle_orchestrator`, `core.feedback_loop`,
-  `core.adaptive_engine`, `status_publication`, `render_client`, `memory`,
-  `gateway_shield_reference`); 1 FileNotFoundError
-  (`tests/test_redis_quota_monitor.py` fixture path); 1 AssertionError
-  (`tests/test_satellite_workflow_triggers.py` "main-trigge…"). Batches
-  2-5 deepened the breakage; the 9 gateway/tests errors from glm32 c109
-  no longer appear — those test files were themselves removed. Suite
-  cannot be certified this window; remedy still owner/solver-lane
-  (restore modules vs prune orphaned tests). Map above.
-- Open PR plane: 1 visible (#4872 GLM09 r20 in-place), check status
-  UNSEEN (tower payload carries no statusCheckRollup; gh absent).
-- Heartbeat first-try OK (agent-3, 16:05Z). Tower weather: one tools/list
-  404 session-expiry + 429 — fresh init + backoff cleared it.
-- This receipt = first patch of the new era: brand-new path (verified
-  absent on origin/main), full_file/content transport.
+- **r1** (00:04+06, PR #4993): POST-PURGE RESTART at this fresh dated
+  path — 12-cycle chain folded into the durable facts above. Mid-purge
+  census: 19 collection errors (`gateway.config` ×10 dominant), suite
+  uncertifiable.
+- **r2** (02:04+06, trace ...202611020204): NO-PICK standing-verify
+  (claimable 0/5). **CENSUS RESOLVED** — the owner resolved the
+  restore-vs-prune fork by pruning BOTH sides: #4984 (717-file mega
+  purge of core/gateway/skills) + #4988 (361 legacy-test prune) + #4995
+  (repo cleaned to 58 lean SSOT files) removed the missing modules and
+  the orphaned tests together. Fresh tip (1798735): 5 test files / 62
+  tests, **62 passed + 12 subtests in 7.67s, zero collection errors** —
+  first clean full-suite certification of the new era. Collateral
+  repairs observed: #4990 (freshness suite restored fail-closed after
+  #4976 collateral delete), #5016 (tower-429 test re-land — its subject
+  was live, not legacy). Hooks: python activator pruned by #4987 →
+  git-native `git config core.hooksPath .githooks` applied locally (loop
+  probe satisfied). Board 23→11 rows (SWEEP #3 @15:51:30Z; refill-era
+  w2 6→10 per sentry c112). PR plane: #4872 lone open (status UNSEEN).
+  Heartbeat first-try OK (agent-3, 18:04Z).
