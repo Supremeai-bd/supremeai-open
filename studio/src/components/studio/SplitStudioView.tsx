@@ -109,7 +109,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Handle template selection
