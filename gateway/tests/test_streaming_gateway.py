@@ -729,6 +729,7 @@ def test_config_provider_enum_matches_task_router_ssot():
             "deepseek",
             "web",
             "perplexity",
+            "manus",
         }
     )
 

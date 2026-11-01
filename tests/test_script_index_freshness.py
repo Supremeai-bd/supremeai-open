@@ -154,6 +154,95 @@ class TestScriptIndexFreshness(unittest.TestCase):
         ok, errs = dpg.run_step1_syntax([PREFLIGHT])
         self.assertTrue(ok, f"self-test fixture path must stay deterministic: {errs[:5]}")
 
+    def test_check_committed_gate_passes_on_fresh_repo(self):
+        """#4471: --check-committed exits 0 when HEAD's index matches the regen."""
+        r = subprocess.run(
+            [sys.executable, str(GENERATOR), "--check-committed"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(
+            r.returncode, 0,
+            f"committed index stale — regenerate and commit it:\n{r.stdout}\n{r.stderr}",
+        )
+
+    def test_committed_layer_is_wired_into_preflight(self):
+        """#4471: the committed-blob layer must be reachable from CI Step 1."""
+        preflight = PREFLIGHT.read_text(encoding="utf-8")
+        self.assertIn(
+            "--check-committed",
+            preflight,
+            "deploy_preflight_guard.py lost the #4471 committed-blob layer",
+        )
+
+    def test_committed_gate_fails_closed_on_stale_head(self):
+        """#4471 class-kill pin: a stale COMMITTED index must fail --check-committed.
+
+        The ordering hole (regen-first CI step mutates the runner's workspace
+        copy, so any workspace read sees a fresh index) is only provable
+        against the committed basis: in a throwaway --shared clone we commit
+        a tampered index to HEAD and demand exit 1. The real checkout is
+        never touched (clone is discarded; no commits, no ref changes here).
+        """
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="idx4471-") as tmp:
+            clone = str(Path(tmp) / "clone")
+            setup = subprocess.run(
+                ["git", "clone", "--shared", "--quiet", str(REPO_ROOT), clone],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            self.assertEqual(setup.returncode, 0, f"clone failed: {setup.stderr[:300]}")
+            gen_in_clone = Path(clone) / "scripts" / "ops" / "generate_script_index.py"
+            index_in_clone = Path(clone) / "scripts" / "ops" / "_INDEX.md"
+            # A clone carries committed state only, so the clone's generator is
+            # the pre-change blob; overlay THIS checkout's generator (the one
+            # under test, with --check-committed) onto the clone. The clone's
+            # lib.auto_discovery and SCAN_ROOT resolve inside the clone, so the
+            # regen basis stays the clone's own tree.
+            shutil.copy2(GENERATOR, gen_in_clone)
+            fresh = subprocess.run(
+                [sys.executable, str(gen_in_clone), "--check-committed"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(fresh.returncode, 0,
+                             f"clone baseline must be green: {fresh.stdout}\n{fresh.stderr}")
+            original = index_in_clone.read_text(encoding="utf-8")
+            index_in_clone.write_text(
+                original + "\n<!-- #4471 test tamper: stale-at-HEAD marker -->\n",
+                encoding="utf-8",
+            )
+            commit = subprocess.run(
+                ["git", "-c", "user.name=gate-pin", "-c", "user.email=gate-pin@test",
+                 "commit", "-aqm", "#4471 pin: stale committed index"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(commit.returncode, 0, f"commit failed: {commit.stderr[:300]}")
+            stale = subprocess.run(
+                [sys.executable, str(gen_in_clone), "--check-committed"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(
+                stale.returncode, 1,
+                "--check-committed passed despite a stale committed index at HEAD "
+                f"(ordering hole reopened):\n{stale.stdout}\n{stale.stderr}",
+            )
+            self.assertIn("STALE", stale.stdout + stale.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
