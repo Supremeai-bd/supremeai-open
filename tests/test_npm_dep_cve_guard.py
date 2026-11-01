@@ -340,7 +340,7 @@ def test_live_baseline_check() -> None:
 # ---------------------------------------------------------------------------
 
 def test_widened_surface_constants() -> None:
-    paths = [str(p) for p in guard.LOCK_PATHS]
+    paths = [p.as_posix() for p in guard.LOCK_PATHS]
     assert paths == [
         "infrastructure/mcp-control-plane/package-lock.json",
         ".agents/skills/devtools-audit/package-lock.json",
