@@ -7,10 +7,10 @@
 > removed from the repo by the founder docs purge (#4965 Batch 1/5;
 > #4966–#4969 Batches 2–5, all refs #762). All evidence stays in git history
 > (git log --grep 486808). This file restarts the slot receipt at minimum
-> size — same in-place replace + fail-closed baseSha CAS pattern from here on.
+> size — in-place replace + fail-closed baseSha CAS from r12 onward.
 
 ## Durable slot facts (compressed)
-- 13 cycles observed, 13 verified no-pick holds; zero claims held, zero
+- 14 cycles observed, 14 verified no-pick holds; zero claims held, zero
   cross-agent collateral. The sole long-lived non-mirror #4471 (pipeline.yml
   `|| true`, protected admin-lane) stayed coverage-demoted ×4 cycles until
   another agent claimed it 06:28+08 Nov 1; it auto-closed via #4612's Closes
@@ -21,10 +21,19 @@
   strategy (+6..+10 min beats the :21 fleet 429 bursts); tower's
   Mcp-Session-Id hardening → session-full flow for heartbeat/read/submit;
   429-aware retry on both read and submit pipelines; local mode-flip
-  root-caused (core.fileMode=false).
+  root-caused (core.fileMode=false); brand-new paths must OMIT baseSha
+  entirely (tower schema: "Omit only for brand-new files" — empty string or
+  HEAD sha both rejected); #762 lean mandate pruned ops scripts too — the
+  python hooks activator is gone (#4987), loop probe now git-native
+  (`git config core.hooksPath .githooks`).
 
-## Current cycle (r11, 00:21+08 Nov 2)
-- Post-purge board first read: totalOpen=2 (#4991 glm14 re-anchor mirror +
-  #4535 glm12 standverify — both bridge:queued mirrors), zero claimable.
-  Loop pass went tower-dark on 429 (U2 honest verdict, no dispatch); our
-  session-full read succeeded. No pick, no claim held.
+## Post-purge landings
+- r11 → #5004 **merged** (432a44e): post-purge restart anchor, new-file
+  submit with baseSha omitted; mirror WO #5003 opened by the bridge.
+
+## Current cycle (r12, 02:21+08 Nov 2)
+- Verified no-pick hold #14: board totalOpen=13 — 12 bridge:queued +
+  1 bridge:in-gates, zero non-mirror (our own #5003 mirror included); loop
+  clean pass (claimable 0/5, zero open P0, PR plane 1 open). Heartbeat
+  session-full first-try ok; board read absorbed one 429 via retry. No pick,
+  no claim held.
