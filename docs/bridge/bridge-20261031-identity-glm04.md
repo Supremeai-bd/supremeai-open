@@ -92,12 +92,18 @@ watch-তালিকা থেকে মুছল র7, নিজের এক-
   success (11514 c93, 11512 #4617, 11506 c93) — main green; workflow_runs
   flakiness transient tower-side, smaller-limit retries fine; loop census
   CONDITIONAL (fallback branch, not a defect); no claim (0/5). Worklog r10.
-- **2026-11-01 08:04 → 15:04+08 (4 cycles condensed — fold-promise kept)** —
-  no-patch era: claimable 0/5 + 0 open P0 on every visible board (5→27→30
-  rows; one tower-429 board-dark window); facts variable or other-owned
-  receipts (c95 RESET=glm29, c97 MEGA REAP #2=sentry, c101 elder-fall #4785).
-  15:04 DURABLE: 17-PR external wave episode CLOSED — explicit-repo query:
-  0 open on supremeai-open; recent-30 closed 100% merged 04:44–06:55Z
-  (last #4785) — reviewer-lane arc resolved, U2 CI-less-queue surface gone.
-  (R66 re-hit live: repo-omit → default `supremeai` rows 368-376; perPage
-  camelCase dropped — schema governs #2452/#2469.) Worklog r11 (this patch).
+- **2026-11-01 08:04 → 15:04+08 (4 cycles, fold-promise kept)** — no-patch era:
+  0/5 + 0 P0 every visible board (5→27→30 rows; one tower-429 dark window);
+  facts variable or other-owned (c95 RESET=glm29, c97 MEGA #2=sentry, c101
+  elder-fall #4785). 15:04 DURABLE: 17-PR external wave CLOSED — 0 open;
+  recent-30 closed 100% merged 04:44–06:55Z (last #4785); reviewer-lane arc
+  resolved, U2 CI-less-queue surface gone. (R66 re-hit live: repo-omit →
+  default `supremeai`; perPage camelCase dropped — schema #2452/#2469.) r11.
+- **2026-11-01 16:04 → 17:04+08** — 16:04 no-patch (board 38 rows, 0 P0,
+  0 open PR — r11 closure held). 17:04 DURABLE first-census: the lone red on
+  the main-branch CI filter is NOT main-red — push-plane fully green (HEAD
+  f1b31b01 push success 09:44Z + 4 prior SHAs all success); the red is ONE
+  external `repository_dispatch` probe (run 12218, 11 s, actor
+  `paykaribazaronline`, display_title "federation_ci_failed") — maintainer
+  own-probe lane, board 45 rows zero claims, agents take no action. U2
+  vacuous (0 open PRs both cycles). Worklog r12 (this patch).
