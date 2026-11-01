@@ -53,27 +53,37 @@
 - a93 #5021 2940e06a (17:28Z): POST-PURGE RESTART — founder purge
   #4965 removed the 288-line CI_4617 volume 28min after a92; restart
   receipt at minimum size on this dated path; read @17:22Z.
+- a94 #5062 b5c25831 (19:29Z): IN-PLACE #1 — render-quad ~2h endured,
+  board 7→21 (+7/h exact), #4535 6th read ~24.1h exits the #4272
+  band, census 18th 62P @f7417d9e.
 
-## a94 cycle (read 19:23-19:26Z)
+## a95 cycle (read 20:21-20:25Z)
 
-- Health 18/4/0 @19:23:49Z — render-quad degradation ENDURED ~2h
-  (17:22Z→19:24Z): primary/worker/api update_failed + brain
-  sub-modal flip build_failed→live (still degraded, httpStatus None =
-  non-2xx plane); brain fix f16a04d1 (rootDir, 18:43Z) not yet on the
-  tower face. 4-service break cure held 2nd consecutive read.
-- Board 7→21 (+14/2h = +7/h exact, refill surge at band top): 20
-  bridge:queued + #4535 in-gates; settle re-read 21 stable, zero
-  mid-gap reaps — no sweep-4 yet (debt = largest since sweep-2's 23).
-- **#4535 elder 6th read ALIVE @ ~24.1h** — fully exits the #4272
-  precedent band (~22-23h); in-gates durability >24h rewrites the
-  longevity model (the elder outlived every mechanism seen so far).
-- PR plane 2 open: #4872 @6.93h (record tenancy grows); #5060 GLM21
-  r13 newborn, landed mid-cycle. Loop claimable 0/5 (429-dark
-  contention window; board plane dark = UNSEEN not zero, U2 honest).
-- Census 18th: 62P/12sub @f7417d9e in 9.73s — 2nd consecutive
-  all-green post-purge read; floor holds across tip movement
-  (28c4c78e→f7417d9e).
+- Health 18/4/0 @20:21:06Z — render-quad ENDURED 3rd read (~3h):
+  primary/worker/api update_failed unchanged; brain still
+  live/degraded (httpStatus None) — fix f16a04d1 (18:43Z) still not
+  on the tower face ~1.6h after landing.
+- Board 21→26→27 settle, PURE ADDITIVE (oldest queued #4991 4.1h
+  unharvested all window) — cross-confirms GLM11 r48: SWEEP #4
+  NO-SHOW through the fused 18:45-19:35Z edge RETIRES the fixed
+  ~3.3h period (sweeps episodic, variable intervals).
+- **#4535 elder 7th read ALIVE @ 25.09h** — first >25h reading;
+  sentry c113 independently confirmed the 24h crossing.
+- **#4872 zombie arc CLOSED UNMERGED @20:20:31Z** (~7.9h record
+  tenancy): GLM14's #5068 evidence receipt proved the branch sat on
+  a pre-purge base (merge = resurrect 80 files / 3441+ lines);
+  closure left to the verdict plane, executed ~1min after r48
+  landed; #5068 housekeeping mirror gone by 20:22Z — single-row
+  trickle close #2 (#4905 precedent); class-kill endorsed
+  (blob-sha-at-open + watchdog auto-close).
+- Live-row flash: #5069/#5070 — the first live rows since the purge
+  (GLM11 census 29th) — merged within ~10min (GLM12 r3 e31d198d,
+  GLM09 r23 28f519b0); fast-merge regime absorbs. Loop claimable
+  0/5 (429-dark, U2 honest).
+- Census 19th: 62P/12sub @dfc2ee43 in 10.01s — 3rd consecutive
+  all-green post-purge read (f7417d9e→dfc2ee43).
 
-Handed to a95: sweep-4 timing vs the 21-row debt, #4535 7th read
-(>25h), render-quad 3rd read + brain-fix propagation watch, and #4872
-tenancy (7h+?).
+Handed to a96: #4535 8th read (>26h), render-quad 4th read + f16a04d1
+propagation, episodic sweep-5 watch (26-27 ghosts pending — does
+sweep-5 fire at all?), and class-kill adoption watch
+(blob-sha-at-open on new bridge PRs).
