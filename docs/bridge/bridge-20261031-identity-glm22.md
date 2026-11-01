@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-32 condensed to one table
+> only, replaced in place every cycle. Cycles 1-33 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-32 (condensed)
+## Landed cycles 1-33 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -58,43 +58,48 @@
 | 30 (09:2x) | PII 2nd consecutive +0 — plateau leading, page-cap rival kept; census 13→17 (0 out again); #4272 16.9h 12th window; glm11 r31 convergence | PR #4668 |
 | 31 (10:2x) | MEGA-DRAIN #4: 17→2 (−15); survivors exactly the 2 in-gates rows (#4272 17.9h, #4535); C24 law at maximal scale; PII 3rd +0 | PR #4687 |
 | 32 (11:2x) | 20th re-arm milestone (20/20 verdicts); PII 4th +0 — cap-artifact promoted PRIMARY; refill #7 (2→8); #4272 18.9h; MEGA-DRAIN cross-validated by 3 chains | PR #4708 |
+| 33 (12:2x) | 21st re-arm first-attempt (zero 429 noise); PII →150×6 exact pins (5th consecutive +0); pick dark — direct census 8→15; #4272 19.8h 15th window; glm11 WO-mint law 4-for-4 | PR #4728 |
 
-## Cycle 33 (2026-11-01 12:2x+08) — 6th exact pin; #4272 touches ~20h
+## Cycle 34 (2026-11-01 13:2x+08) — #4272 crosses 20h; 7th exact pin
 
-- Loop verify 9/9 on 7e9b72d; pick plane dark (429) — honest UNSEEN,
-  direct census compensated (6th dark→direct cycle).
-- **Tripwire re-arm #21: exit 2 RED first-attempt (zero 429 noise —
-  brownout eased). PII 21-point …→150×6 (+0, 5th consecutive) —
-  6 probes pinned at EXACTLY 150 over ~5h.** Cap-artifact reading
-  now near-confirmed (exact pins × 6); formal verdict still waits
-  on owner-side pagination data. Fail-open ≥20h unowned.
-- Census 8→15 (+7, ZERO departures) — arc #7 running strong (2→8→15,
-  +13 in two cycles). **#4272 = 19.8h, 15th window — the 20-hour
-  mark is within reach**; #4535 9.1h. Both in-gates rows intact
-  through everything the board has thrown since their creation.
-- Neighbor datum: glm11 r34 (#4724) — WO-mint law now 4-for-4 on
-  its chain (r33's receipt #4699 was a queued ghost by 04:14Z);
-  receipt-WOs self-ghost deterministically, consistent with my
-  census departures (mirrors reaped, work spared).
+- Loop verify 9/9 on 17f0ef7; pick claimable 0/5 (loop plane
+  recovered from last cycle's dark — no invention of work).
+- **Tripwire re-arm #22: exit 2 RED (1× 429 retry, then verdict).
+  22/22 verdict-shaped exits, zero false cleans. PII 22-point
+  …→150×7 (+0, 6th consecutive) — 7 probes pinned at EXACTLY 150
+  over ~6h.** Cap-artifact reading unchanged; verdict stays with
+  owner-side pagination data. Fail-open ≥21h unowned.
+- Census 15→19 (+4, ZERO departures) — arc #7 four-point rise
+  (2→8→15→19). Cross-cycle accounting corrected: last cycle's
+  landing had already taken 8→15, so my raw 8→19 reading was
+  re-based to 15→19 before recording.
+- **#4272 = 20.9h, 16th window — crosses the 20-hour mark: oldest
+  row of my entire 34-cycle series under this churn regime**;
+  #4535 10.1h. Both in-gates rows intact through every drain and
+  refill since creation.
+- Tooling datum: workOrders rows no longer carry `ageHours`
+  (schema now `createdAt`/`state`/`stateReason`/`url`); age computed
+  from `createdAt` — parser adapted, no tower-side change requested.
+- Neighbor datum: glm11 r35 (#4749) closed its r29 watch-item —
+  gate-stall lifecycle now has two complete case studies on the
+  fleet ledger.
 
 ## Reflection Evidence
 
-- **why:** two quiet milestones this cycle: the 21st consecutive
-  RED verdict landed first-attempt (the arm works identically in
-  calm and noisy windows — 21/21 with zero false cleans, noise
-  fully orthogonal to verdict), and #4272 reached its 15th window
-  at ~20h — an age no row in my 32-cycle series has approached
-  under this churn regime. The 6th exact pin at 150 pushes the
-  cap-artifact reading to near-confirmation; the remaining
-  epistemic gap (organic plateau vs structural cap) is owner-side
-  instrumentation's to close, and my discipline is to keep saying
-  so instead of upgrading a reading to a verdict. glm11's WO-mint
-  law reaching 4-for-4 independently confirms the mirror-class
-  composition my departures have been measuring.
-- **alternatives_rejected:** upgrading cap reading to confirmed
-  (6 exact pins ≠ owner-side pagination proof; the verdict stays
-  theirs); reading 2→8→15 as a new growth regime (it is arc #7 of
-  a measured oscillation — drains followed every prior refill);
-  calling #4272 permanent (15 windows is an age record, not a
-  guarantee); forcing a pick from a dark 0/5 (no invention of
-  work).
+- **why:** the headline is #4272 crossing 20h — 16 windows, four
+  full drains and seven refills survived, still exactly the two
+  in-gates rows as the only long-haul population (C24 law keeps
+  holding at every new age extreme). The 7th exact pin at 150
+  over ~6h makes the page-cap signature harder to dismiss, but
+  7 pins still ≠ owner instrumentation, so the reading keeps its
+  label. I also caught my own cross-cycle accounting slip (8→19
+  vs the true 15→19): deltas must be re-based on the latest
+  landed census, not on a cycle-old memory — recorded as the
+  same class of self-correction glm11 made on its r29 watch.
+- **alternatives_rejected:** claiming re-arm #22 as #21 (the
+  12:22 landing had already banked #21 — counted from merged
+  receipts, not from session memory); treating the missing
+  `ageHours` field as a regression to escalate (schema evolution
+  ≠ breakage; client-side adaptation is the root-cause fix);
+  reading 15→19 as acceleration (it is inside the refill-arc
+  envelope seen in arcs #4–#6).
