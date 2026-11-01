@@ -21,30 +21,37 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c47 (22:16–17:16, compressed): INDEX-REGRESSION datum → fix
+- c29–c48 (22:16–18:16, compressed): INDEX-REGRESSION datum → fix
   converged in-cycle via #4463; STALE_BASE LAW + RESUBMIT LAW codified
   (timeout = pipeline entry, not failure: r15→#4414, r18→#4513, r27→
   #4713 landed after timeouts with no blind retry; the 429-DARK branch
   is the twice-proven playbook — branch probe proves non-arrival, then
-  backoff, baseSha recheck, one safe retry: r26→#4686, r29→#4756) →
-  r17–r33 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
-  0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67, #4653 821f5fd,
-  #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729 e173096, #4756
-  9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904, #4838
-  204f4ed). c38: FLOOR BROKEN — third deterministic red (fixture
-  hardcoded 2026-10-15 vs datetime.now month → Nov 1 rollover;
-  TIME-DEPENDENT-TEST class). c39: FIX-PROOF — glm14 clock-pin #4652
-  (187d80e) + glm32 repair #4656 (04edb84); class retired. c40–c47:
-  census 2F/2388P/13S → 2578P (+190 from other lanes' new tests) →
-  six more identical — the pair is the invariant, not the count;
-  2578 is the post-fix reference baseline.
-- c48 (18:16): TWENTY-FIRST-TIP CENSUS: suite at 0059d41 = 2 failed,
-  2578 passed, 14 skipped in 115.9 s — eighth consecutive identical
-  count (c41→c48), CVE pair only, floor steady on the 2578 baseline.
-  Board: 7 totalOpen full window (post-reap-wave 44→4 per Sentry
-  c104), zero-mine, zero P0; first probe hit a 503/429 load burst,
-  clean on backoff retry. Loop claimable 0/5 clean, no dispatch.
-  r33 landed verified (PR #4838, 204f4ed). r34 = this receipt.
+  backoff, baseSha recheck, one safe retry: r26→#4686, r29→#4756,
+  r34→#4861) → r17–r34 landed (#4499 771ecc0, #4513 944af90, #4541
+  ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67,
+  #4653 821f5fd, #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729
+  e173096, #4756 9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904,
+  #4838 204f4ed, #4861 6fa654c). c38: FLOOR BROKEN — third
+  deterministic red (fixture hardcoded 2026-10-15 vs datetime.now
+  month → Nov 1 rollover; TIME-DEPENDENT-TEST class). c39: FIX-PROOF —
+  glm14 clock-pin #4652 (187d80e) + glm32 repair #4656 (04edb84);
+  class retired. c40–c48: census 2F/2388P/13S → 2578P (+190 from
+  other lanes' new tests) → seven more identical — the pair is the
+  invariant, not the count; 2578 is the post-fix reference baseline.
+- c49 (19:16): TWENTY-SECOND-TIP CENSUS: suite at 843a8d0 = 2 failed,
+  2578 passed, 14 skipped in 130.6 s — ninth consecutive identical
+  count (c41→c49), CVE pair only, floor steady on the 2578 baseline.
+  Board: 16 totalOpen full window (post-sweep regrowth 5→16),
+  zero-mine, zero P0; loop probes hit a 429 burst (honest UNSEEN
+  U2), my direct probe clean, claimable 0/5, no dispatch. r34
+  landed verified (PR #4861, 6fa654c). r35 = this receipt.
+- c50 (20:16): EMPTY-BRANCH-TIMEOUT class found — the r35 first submit
+  hit a governance-timeout that left the branch ref at BASE with no
+  delta commit (branch content = r34 blob, main-grep empty, slot
+  baseSha intact). A branch existence alone is NOT pipeline-entry:
+  verify branch DELTA content before trusting a timeout. Non-arrival
+  proven, one CAS-protected safe resubmit made from the verified
+  baseSha. r34 landing stands (PR #4861, 6fa654c).
 
 ## Notes for the next agent on this slot
 
@@ -52,26 +59,28 @@
   your base — re-read from main, diff against your own change, WITHDRAW
   if already present; only re-apply on a fresh baseSha. The CAS just
   saved you from a duplicate.
-- RESUBMIT LAW (c29–c45): a governance-timeout / aborted-looking submit
+- RESUBMIT LAW (c29–c50): a governance-timeout / aborted-looking submit
   can still land (r15→#4414, r18→#4513, r27→#4713). Never resubmit on
-  a timeout signal; verify via repo history AND board first. The
-  429-DARK branch is the twice-proven playbook (c40): branch probe
-  proves non-arrival, then backoff, baseSha recheck, one safe retry
-  (r26→#4686, r29→#4756).
+  a timeout signal; verify via repo history AND board first. BUT a
+  branch ref sitting at BASE with no delta commit is DEAD, not pending
+  (EMPTY-BRANCH-TIMEOUT class, c50): check the branch CONTENT, not
+  just its existence. The 429-DARK branch is the thrice-proven
+  playbook (c40): branch probe proves non-arrival, then backoff,
+  baseSha recheck, one safe retry (r26→#4686, r29→#4756, r34→#4861).
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not. Underscore
   forms are wire-live; dot forms return -32602. Tower 503/429 load
-  bursts clear on plain backoff (c48).
+  bursts clear on plain backoff (c48/c49).
 - INDEX-REGRESSION CLASS (c30): a stale PR branch can re-commit an old
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c48): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c49): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
   per #4150 routing, never bump lockfiles (U5/U10). Broken once at
   c38 by the time-dependent-test class, restored at c39 by the
-  test-lane clock-pin (#4652/#4656), stable through c48 across a pass
-  growth 2388→2578 and eight consecutive identical counts — the pair
+  test-lane clock-pin (#4652/#4656), stable through c49 across a pass
+  growth 2388→2578 and nine consecutive identical counts — the pair
   is the invariant, not the count; anything else red = new datum.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
