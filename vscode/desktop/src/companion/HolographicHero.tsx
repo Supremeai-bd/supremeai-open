@@ -1,5 +1,6 @@
-import { HOLO_AVATAR_CORTANA, HOLO_AVATAR_IRIDESCENT } from './avatarAssets';
 import { useState, useEffect, useRef } from 'react';
+import PrismCanvas from './PrismCanvas';
+import Holographic3D from './Holographic3D';
 import './HolographicHero.css';
 
 export type CompanionState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -21,8 +22,6 @@ export default function HolographicHero({
   latestReply,
   onSendPrompt,
 }: HolographicHeroProps) {
-  // Avatars switchable: cortana (blue neon wireframe) vs iridescent (anime cyber-glow)
-  const [activeModel, setActiveModel] = useState<'cortana' | 'iridescent'>('cortana');
   const [internalState, setInternalState] = useState<CompanionState>(state);
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -32,6 +31,21 @@ export default function HolographicHero({
   const [position, setPosition] = useState({ x: 30, y: window.innerHeight - 480 });
   const isDraggingRef = useRef(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+  // Mouse-tracking parallax for lifelike gaze
+  const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      setParallax({
+        x: ((e.clientX - cx) / cx) * 6,
+        y: ((e.clientY - cy) / cy) * 6,
+      });
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, []);
 
   useEffect(() => {
     setInternalState(state);
@@ -131,28 +145,27 @@ export default function HolographicHero({
     }
   };
 
-  const avatarSrc = activeModel === 'cortana' ? HOLO_AVATAR_CORTANA : HOLO_AVATAR_IRIDESCENT;
-
   const floatingStyle: React.CSSProperties = isDocked
     ? {
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-      }
+      left: `${position.x}px`,
+      top: `${position.y}px`,
+    }
     : {};
 
   return (
     <div
       style={floatingStyle}
-      className={`holo-container ${
-        isDocked ? 'holo-container--floating' : 'holo-container--immersive'
-      }`}
+      className={`holo-container ${isDocked ? 'holo-container--floating' : 'holo-container--immersive'
+        }`}
     >
-      {/* Background Cyber Floor Projector (visible in 90% full immersive view) */}
+      {/* Background Cyber Floor Projector & Prism Particles */}
+      <PrismCanvas theme="prism" />
       {!isDocked && (
         <>
           <div className="holo-projector-floor" />
           <div className="holo-projector-rings" />
           <div className="holo-beam-sweep" />
+          <div className="holo-light-beams" />
         </>
       )}
 
@@ -164,22 +177,10 @@ export default function HolographicHero({
       >
         <div className="holo-badge">
           <span className="holo-status-dot" />
-          <span>{isDocked ? '⠿ DRAG ME' : `HOLO-AI // ${internalState.toUpperCase()}`}</span>
+          <span>{isDocked ? '⠿ DRAG ME' : `HOLO-AI 3D // ${internalState.toUpperCase()}`}</span>
         </div>
 
         <div style={{ display: 'flex', gap: '6px' }}>
-          {/* Avatar Switcher */}
-          <button
-            className="holo-btn-action"
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveModel((m) => (m === 'cortana' ? 'iridescent' : 'cortana'));
-            }}
-            title="Switch Holographic Model"
-          >
-            {activeModel === 'cortana' ? '⚡ Cyber' : '✨ Glow'}
-          </button>
-
           {/* Dock / Expand Toggle */}
           {onToggleDock && (
             <button
@@ -209,9 +210,9 @@ export default function HolographicHero({
         </div>
       </div>
 
-      {/* Main Holographic Avatar Stage */}
+      {/* Pure 3D Holographic Cyber Avatar (Zero Still Images) */}
       <div className={`holo-avatar-wrapper holo-avatar-wrapper--${internalState}`}>
-        <img src={avatarSrc} alt="Holographic AI Companion" className="holo-avatar-img" />
+        <Holographic3D state={internalState} />
         <div className="holo-scanlines" />
       </div>
 
@@ -223,10 +224,10 @@ export default function HolographicHero({
             (internalState === 'listening'
               ? 'Listening... Speak your command clearly.'
               : internalState === 'thinking'
-              ? 'Synthesizing neural telemetry...'
-              : internalState === 'speaking'
-              ? 'Broadcasting response across system channels.'
-              : 'SupremeAI Neural Hologram online. Tap the mic or type.')}
+                ? 'Synthesizing neural telemetry...'
+                : internalState === 'speaking'
+                  ? 'Broadcasting response across system channels.'
+                  : 'SupremeAI Neural Hologram online. Tap the mic or type.')}
         </div>
 
         {/* Microphone Push-to-Talk */}
