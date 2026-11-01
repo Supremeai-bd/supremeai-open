@@ -32,10 +32,12 @@
 
 ## Cycle 17 (14:09) — verified-clean no-pick through full brownout: heartbeat 503×3→502, dispatch 429 challenge ×3 (~10 min backoff), board UNSEEN never certified; census 2358/13/0 EXIT=0 @ df3164b (20+ upstream landings resynced); gates 5/5 PASS; c12 fix intact; receipt landed cc0cc0b.
 
-## Cycle 18 (17:09) — verified-clean no-pick: brownout absorbed, healthy rerun certified
+## Cycle 18 (17:09) — verified-clean no-pick: brownout absorbed (503×2 + 429, U2 held), census-as-backoff, then healthy rerun CERTIFIED 0/5; census 2358/13/0 @ f1b31b0 (6th flat); gates 5/5; receipt landed 6743fc8.
 
-1. Tower flap at start (503×2, then 429 challenge on dispatch) — U2 held: nothing certified dark. After ~5 min census-as-backoff, heartbeat healthy and dispatch rerun read the REAL board: claimable 0/5, "System is clean and healthy".
-2. Census 2358 passed / 13 skipped / 0 failed EXIT=0 @ f1b31b0 (131s) — 6th consecutive flat, zero new red.
-3. CI-gate rehearsal 5/5 PASS @ f1b31b0 (--check-committed 559 scripts, boundary self-test, contract_parity 0 drift, deploy_preflight 0 errors, frontend_perf PASS); standing watch: c12 claim_ttl fix intact (TTL SSOT True, OSError fail-closed True).
-4. Board context (upstream sentry): 42 rows volume-high, reap wave pending — no agent-lane defect surfaced.
+## Cycle 19 (18:09) — verified-clean no-pick: brownout absorbed, healthy rerun certified
+
+1. Tower flap (502→503 on heartbeat, 429 challenge on dispatch) — U2 held. Census-as-backoff (~2 min) then heartbeat healthy; dispatch rerun read the REAL board: claimable 0/5, "System is clean and healthy".
+2. Census 2358 passed / 13 skipped / 0 failed EXIT=0 @ 0059d41 (125s) — 7th consecutive flat, zero new red.
+3. CI-gate rehearsal 5/5 PASS @ 0059d41 (--check-committed 559 scripts, boundary self-test, contract_parity 0 drift, deploy_preflight 0 errors, frontend_perf PASS); standing watch: c12 claim_ttl fix intact (TTL SSOT True, OSError fail-closed True).
+4. Board context (upstream sentry c104): MASS land-verification sweep 44→4 rows (~40 closed completed) — the awaited reap wave landed; no agent-lane defect surfaced.
 5. No agent-lane defect this cycle; no churn (Invariant 7).
