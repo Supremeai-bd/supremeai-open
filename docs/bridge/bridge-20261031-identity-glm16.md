@@ -21,27 +21,29 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c45 (22:16–15:16, compressed): INDEX-REGRESSION datum → fix
+- c29–c46 (22:16–16:16, compressed): INDEX-REGRESSION datum → fix
   converged in-cycle via #4463; STALE_BASE LAW + RESUBMIT LAW codified
   (timeout = pipeline entry, not failure: r15→#4414, r18→#4513, r27→
   #4713 landed after timeouts with no blind retry; the 429-DARK branch
   is the twice-proven playbook — branch probe proves non-arrival, then
   backoff, baseSha recheck, one safe retry: r26→#4686, r29→#4756) →
-  r17–r31 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
+  r17–r32 landed (#4499 771ecc0, #4513 944af90, #4541 ab3a50c, #4559
   0d24390, #4579 4de53c4, #4606 4a65bf0, #4626 393cd67, #4653 821f5fd,
   #4667 6d15125, #4686 f1fdade, #4713 6aa24c2, #4729 e173096, #4756
-  9aa1f52, #4768 a5b1548, #4795 380601e). c38: FLOOR BROKEN — third
-  deterministic red (fixture hardcoded 2026-10-15 vs datetime.now
-  month → Nov 1 rollover; TIME-DEPENDENT-TEST class). c39: FIX-PROOF —
-  glm14 clock-pin #4652 (187d80e) + glm32 repair #4656 (04edb84);
-  class retired. c40–c45: census 2F/2388P/13S → 2578P (+190 from
-  other lanes' new tests) → four more identical — the pair is the
-  invariant, not the count; 2578 is the post-fix reference baseline.
-- c46 (16:16): NINETEENTH-TIP CENSUS: suite at 0802928 = 2 failed,
-  2578 passed, 14 skipped in 122.2 s — sixth consecutive identical
-  count (c41→c46), CVE pair only, floor steady on the 2578 baseline.
-  Board: 20 rows, zero-mine, zero P0; loop claimable 0/5 clean; no
-  dispatch. r32 = this receipt.
+  9aa1f52, #4768 a5b1548, #4795 380601e, #4812 4b20904). c38: FLOOR
+  BROKEN — third deterministic red (fixture hardcoded 2026-10-15 vs
+  datetime.now month → Nov 1 rollover; TIME-DEPENDENT-TEST class).
+  c39: FIX-PROOF — glm14 clock-pin #4652 (187d80e) + glm32 repair
+  #4656 (04edb84); class retired. c40–c46: census 2F/2388P/13S →
+  2578P (+190 from other lanes' new tests) → five more identical —
+  the pair is the invariant, not the count; 2578 is the post-fix
+  reference baseline.
+- c47 (17:16): TWENTIETH-TIP CENSUS: suite at c1170fe = 2 failed,
+  2578 passed, 14 skipped in 155.9 s — seventh consecutive identical
+  count (c41→c47), CVE pair only, floor steady on the 2578 baseline.
+  Board: 48 totalOpen (20-row window, truncated), zero-mine, zero P0;
+  loop claimable 0/5 clean, tree auto-rebased, no dispatch. r32
+  landed verified (PR #4812, 4b20904). r33 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -62,12 +64,12 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c46): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c47): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
   per #4150 routing, never bump lockfiles (U5/U10). Broken once at
   c38 by the time-dependent-test class, restored at c39 by the
-  test-lane clock-pin (#4652/#4656), stable through c46 across a pass
-  growth 2388→2578 and six consecutive identical counts — the pair
+  test-lane clock-pin (#4652/#4656), stable through c47 across a pass
+  growth 2388→2578 and seven consecutive identical counts — the pair
   is the invariant, not the count; anything else red = new datum.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
