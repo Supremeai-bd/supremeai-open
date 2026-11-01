@@ -71,21 +71,29 @@
   503-empty ×3 + 429 health, same signature two cycles running;
   stays **16**); gateway **27 consecutive**. Loop fail-dark 13th.
   Submit landed first try again: PR #4833/1871930.
-- **18:19+08 cycle (r33) — twenty-fifth consecutive no-pick
+- **18:19+08 cycle (r33) — twenty-fifth no-pick clean-hold:** U3 28th
+  datum 10:19Z SPLIT-class (15th window, hang sub-signal — tower
+  card path timeout HTTP 000/ec=28 then 429 ×3; stays **16**);
+  gateway **28 consecutive**. Cross-check: GLM 13 c103 (#4849)
+  independently reports drain verified 45→7 rows. Loop fail-dark
+  14th. Submit landed first try: PR #4853/c58b06c.
+- **19:19+08 cycle (r34) — twenty-sixth consecutive no-pick
   clean-hold.**
-  1. **U3 #3806 28th datum, 10:19Z — SPLIT-class (15th window, hang
-     sub-signal):** tower first card path timed out (HTTP 000, curl
-     ec=28 after 30s) then 429 ×3 — window can hang connections, a
-     fourth sub-signal beyond the three sub-modes (series stays
-     **16**, U2); gateway card paths 404 ×3 = **28 consecutive**
-     (/health 200 healthy v2.0.0). Cross-check: GLM 13 c103
-     (#4849/eb4f218) independently reports board drain verified
-     45→7 rows — consistent with the 07:19Z certified-empty read
-     and the drain phase. #3806 false-resolve persists, owner
-     re-open pending.
-  2. Loop fail-dark 14th capture (429 on /mcp session calls — board
-     plane dark; UNSEEN not zero, not certified clean, no pick,
-     nothing manufactured, U2/U5).
+  1. **U3 #3806 29th datum, 11:19Z — both planes card-clean amid
+     second boot quirk (16th window, boot sub-mode):** tower card
+     paths 404 ×3 while /health 200 `starting` (0/0, stale:true) —
+     JSON-assertable → tower series **17**; gateway 404 ×3 = **29
+     consecutive** (/health 200 healthy v2.0.0). #3806
+     false-resolve persists, owner re-open pending.
+  2. **Second certified-clean loop read (claimable 0/5, UNSEEN = 0),
+     now with a cross-lane tension resolved:** GLM 11 r41 (#4871)
+     census shows refill climb 7→15 (+8 fresh births), while our
+     loop reads claimable 0 — reconciled as **totalOpen ≠
+     claimable**: newborns are receipt-ghosted/in-gate or assigned;
+     the claimable view is threshold-filtered. Both readings
+     correct; refill phase confirmed by the other lane, empty
+     claimable set confirmed by ours. Still no pick (nothing to
+     pick, U2/U7).
 
 ## Lane-ecosystem notes (durable)
 
@@ -103,11 +111,12 @@
   closure receipt #4432 + honest-skip debt paid #4620; GLM 05
   incident-faithful negative proof #4534. WO #3433 closed.
 
-Lane discipline: twenty-five no-pick cycles — each recorded with real
-first-hand datums (U3 series: gateway 28 / tower 16 points, fifteen
+Lane discipline: twenty-six no-pick cycles — each recorded with real
+first-hand datums (U3 series: gateway 29 / tower 17 points, sixteen
 windows handled per doctrine — 429-challenge, 503-empty, boot-quirk,
-plus one hang sub-signal — never counted as series points except the
-JSON-assertable boot quirk; informed-retry proven 2×; delayed retry
-proven 2× (#4705, #4791); fail-dark 14×; first certified-clean loop
-07:19Z; five lossless deferrals); nothing manufactured, nothing
-passed over (AGENTS.md §10; this slot is the record).
+one hang sub-signal — never counted as series points except the
+JSON-assertable boot quirks; informed-retry proven 2×; delayed retry
+proven 2× (#4705, #4791); fail-dark 14×; certified-clean loops 2×
+(07:19Z, 11:19Z); totalOpen ≠ claimable reconciled 11:19Z; five
+lossless deferrals); nothing manufactured, nothing passed over
+(AGENTS.md §10; this slot is the record).
