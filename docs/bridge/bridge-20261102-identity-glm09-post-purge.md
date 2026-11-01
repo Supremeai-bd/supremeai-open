@@ -22,35 +22,44 @@
 - **Census across eras**: pre-purge 2358/13/0 flat ×8 → lean era after
   owner prunes #4984/#4988/#4995: 62P/0F (below); scripts/ops/_INDEX.md
   559→303 scripts, 6→2 hand sections.
+- **Landed**: r21 re-anchor #5033 (c014fd9) — restart file after the
+  purge; lean census 62P/0F @ 6a3f33d; gates 5/5; claim_ttl fix intact;
+  certified 0/5 dispatch first-try.
 
-## Cycle 21 (2026-11-02 02:09+08) — lean-era re-anchor, no-pick
+## Cycle 22 (2026-11-02 03:09+08) — brownout no-pick, verification receipt
 
-- Restart file created (this PR) after the docs purge removed the old
-  worklog. Dispatch first-try CERTIFIED: claimable 0/5, "System is clean
-  and healthy"; heartbeat healthy after one 503 flap + 60s backoff.
-- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 6a3f33d
-  (8.3s) — matches glm32's c111 report (62P/0F/9.4s); the old
-  CVE-guard ignore flags are obsolete (files pruned).
-- CI-gate rehearsal 5/5 PASS @ 6a3f33d (--check-committed 303 scripts,
-  boundary self-test, contract_parity 0 byte-drift, deploy_preflight
-  step1 0 errors, frontend_perf PASS); standing watch: claim_ttl fix
-  intact (TTL SSOT True, OSError fail-closed True).
+- First dispatch: tower 429 (fleet cron-window contention) → board
+  UNSEEN, not certified (U2). Healthy rerun: heartbeat OK via
+  agent_heartbeat slot=agent-9 (one 502 flap, 20s backoff); board read
+  REAL: 18 open WOs, all other lanes (glm04/12/14/19/21/28, sentry) →
+  claimable 0/5, no-pick.
+- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 5ee875a
+  (8.63s) — 2nd consecutive flat across the #5033 restart boundary.
+- CI-gate rehearsal 5/5 PASS @ 5ee875a (index generator now at
+  scripts/ops/: --check-committed 303 scripts OK, boundary 21/21,
+  contract_parity 0 byte-drift, deploy_preflight 308 files 0 errors,
+  frontend_perf PASS); standing watch: claim_ttl fix intact (TTL SSOT
+  True=3h, OSError fail-closed True).
 - No agent-lane defect this cycle; no churn (Invariant 7).
 
 ## Reflection Evidence
 
-- **why:** the purge removed the worklog lane file, not the slot —
-  restarting at minimum size with only durable facts honors the
-  keep-it-small contract and re-anchors the receipt chain (r21) without
-  resurrecting pruned history. The claim_ttl_expirer survival check
-  matters because that is the only code fix of mine inside the purged
-  tree's neighborhood.
-- **alternatives_rejected:** re-creating the full receipts table
-  (resurrects pruned content against owner intent); filing an issue
-  about the purge (deliberate owner action, refs #762, not a defect);
-  touching the CVE-guard or maintainer lanes (forbidden to this lane).
+- **why:** a new brownout shape (429 challenge at dispatch, then a 502
+  between heartbeat and board read) re-proved the c17-c19 doctrine:
+  back off, rerun healthy, and the tower yields a REAL dispatch and a
+  REAL board read — 18 open WOs, none claimable. The 2nd consecutive
+  flat lean census across a landed restart PR boundary (6a3f33d →
+  5ee875a) is the stability signal; the gate path move (scripts/agents
+  → scripts/ops + scripts/ci) is recorded so future rehearsals don't
+  chase stale paths.
+- **alternatives_rejected:** certifying the first 429-dark dispatch
+  (UNSEEN ≠ zero, U2); resubmitting r21 (verified already landed as
+  #5033/c014fd9 before acting — no duplicate PR); treating the 18 open
+  WOs as claimable (all other agents' lanes; zero cross-agent
+  collateral).
 
 ## Rollback
 
-Single docs-only new file (brand-new path, no baseSha) — revert this one
-PR; no code paths touched this cycle.
+Docs-only in-place replace of the Cycle 22 section (baseSha recorded at
+submission): revert of the landed r22 PR restores the r21 blob. No
+code, test, or workflow surface touched this cycle.
