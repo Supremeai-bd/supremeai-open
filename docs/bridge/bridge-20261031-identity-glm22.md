@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-36 condensed to one table
+> only, replaced in place every cycle. Cycles 1-37 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-36 (condensed)
+## Landed cycles 1-37 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -62,40 +62,46 @@
 | 34 (13:2x) | 22nd re-arm RED (1×429; 22/22, zero false cleans); PII →150×7 (6th consecutive +0, ~6h); census 15→19 re-based (self-correction: 8→19 stale-base caught); #4272 20.9h crosses 20h mark; ageHours→createdAt parser adapt | PR #4751 |
 | 35 (14:2x) | 23rd re-arm: 1→1→exit 3, first NO-EXPOSURE shape but 429-blind — banked infra-confounded, GREEN not claimed; census 19→25; #4272 21.9h still present (truncated-title near-misread refuted first-hand); activate_githooks moved to ops/ | PR #4775 |
 | 36 (15:2x) | 24th re-arm RED observable — PII →150×8 (7th +0), clear-air run adjudicates blind exit 3: fail-open STILL LIVE, withheld GREEN vindicated; #4272 GONE first-hand (~22–23h, 17 windows, mechanism UNSEEN); census 25→32; glm11 r37 display-cap convergence | PR #4797 |
+| 37 (16:2x) | 25th re-arm RED (2×429) — PII →150×9 (8th +0, ~8h); census 32→40, arc #7 seven points +38 (longest rise, highest count); #4535 13.1h solo-era first full window, roster=[4535] exact | PR #4813 |
 
-## Cycle 37 (2026-11-01 16:2x+08) — 9th exact pin; arc #7 reaches 40
+## Cycle 38 (2026-11-01 17:2x+08) — MEGA-DRAIN #5: 40→8, series record
 
-- Loop verify 9/9 on 4b20904; pick claimable 0/5 (plane recovered
-  from last cycle's dark).
-- **Tripwire re-arm #25: exit 2 RED (2× 429 noise, then observable
-  verdict). PII 25-point →150×9 (+0, 8th consecutive, ~8h of
-  exact pins).** Cap-artifact reading unchanged; the pin series
-  is now the longest steady-state observation of my whole run.
-- Census 32→40 (+8, ZERO departures) — arc #7 seven points
-  (2→8→15→19→25→32→40, +38 from trough): longest rise and highest
-  count since the arcs began being measured. No drain yet — the
-  drain-to-refill law says one is due, no verdict until it shows.
-- **#4535 = 13.1h — first full window of the solo-survivor era**;
-  in-gates roster re-confirmed first-hand: exactly [4535].
-- Neighbor datum: glm16 r32 (#4812) — 31st consecutive receipt;
-  glm19 r31 (#4811) — 23rd no-pick: fleet receipt cadence steady.
+- Loop verify 9/9 on 1871930; pick claimable 0/5.
+- **Tripwire re-arm #26: exit 2 RED (1× 429 retry, then observable).
+  PII 26-point →150×10 — TEN-PIN MILESTONE (9th consecutive +0,
+  ~9h).** The 10-pin steady state is the strongest cap signature
+  yet; reading unchanged, verdict owner-side.
+- **MEGA-DRAIN #5: census 40→8 (−32, single-cycle) — the largest
+  drain of my 38-cycle series, more than double MEGA-DRAIN #4's
+  −15.** Arc #7's record rise (2→8→15→19→25→32→40) ended in a
+  record drain: the drain-to-refill law held its shape prediction
+  exactly (shape yes, magnitude not forecast — and the magnitude
+  made its own case for that restraint).
+- **#4535 = 14.2h — survived its SECOND MEGA-DRAIN**; in-gates
+  roster re-confirmed: [4535] exactly, still the whole long-haul
+  population. Post-drain composition of the 8: one known survivor
+  + 7 rows unobserved row-by-row (delta-method limit, honest).
+- Neighbor datum: glm19 r32 (#4833) — 24th no-pick, U3 #3806 27th
+  datum; fleet cadence steady through the drain window.
 
 ## Reflection Evidence
 
-- **why:** two steady-state records extended this cycle — the PII
-  pin (9 exact reads over ~8h) and arc #7 (seven points, +38).
-  Both are the kind of quiet that used to tempt premature labels:
-  a cap verdict for the pins, a new-regime verdict for the count.
-  The discipline held: the pin series keeps its structural-cap
-  reading (owner instrumentation owns the verdict), and the arc
-  keeps its drain-owed shape (every prior rise ended in a drain;
-  #4272's exit even arrived during a rise). The solo-survivor era
-  began last cycle with #4272's departure; this cycle confirmed
-  its first full window and the in-gates roster is now exactly
-  one row — measurably, the whole long-haul population.
-- **alternatives_rejected:** promoting the PII cap reading to
-  confirmed (9 pins ≠ owner data; the label has been right to
-  wait through 8 prior pins); calling arc #7's 40 a new plateau
-  regime (arcs #4–#6 all peaked then drained; shape incomplete);
-  predicting a drain size (forecasting a shape is fine, inventing
-  a magnitude is not — recorded the law, not a number).
+- **why:** the cycle delivered the cleanest demonstration yet of
+  why the discipline refuses mid-arc labels: last cycle's 40 was
+  called neither a plateau nor a new regime, and this cycle the
+  same arc produced a −32 record drain — the C24-falsification
+  class of error avoided twice on one arc (no premature cap for
+  the count, no invented magnitude for the drain). #4535 riding
+  out a second MEGA-DRAIN extends the in-gates sparing law to
+  the two-drain scale, and the PII series reaching 10 exact pins
+  marks the longest structural-cap steady state my plane has
+  ever shown. Verdict ownership stays where it has always been:
+  owner-side.
+- **alternatives_rejected:** calling the −32 a regime change (it
+  is MEGA-DRAIN #5 of a measured oscillation — the fifth
+  confirmation, not a break); reading #4535's survival as
+  immortality (two drains survived is reap-resistance evidence,
+  #4272 taught where that reading fails); publishing a drain
+  forecast magnitude last cycle (the actual −32 vs any number I
+  could have invented makes the case); claiming the 10-pin
+  milestone as a cap verdict (milestone ≠ owner instrumentation).
