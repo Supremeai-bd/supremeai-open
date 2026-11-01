@@ -4,10 +4,23 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 interface Holographic3DProps {
   state?: 'idle' | 'listening' | 'thinking' | 'speaking';
   className?: string;
+  /**
+   * Optional rigged GLTF/GLB avatar URL. When it loads, the procedural
+   * head/torso is swapped for the rigged model and its mouth morph
+   * targets drive lip sync. Any load error keeps the procedural hologram.
+   */
+  avatarUrl?: string;
+  /**
+   * Optional TTS audio element or mic stream. When provided, a Web Audio
+   * AnalyserNode measures real amplitude to drive the mouth (true
+   * audio-driven lip sync). Without it the procedural viseme rhythm runs.
+   */
+  audioTarget?: MediaStream | HTMLMediaElement | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -23,8 +36,16 @@ interface Holographic3DProps {
 //      real audio analysis is deferred until TTS audio is routable).
 // Contract preserved: same props, same container class, pointerEvents none.
 // ---------------------------------------------------------------------------
-export default function Holographic3D({ state = 'idle', className = '' }: Holographic3DProps) {
+export default function Holographic3D({
+  state = 'idle',
+  className = '',
+  avatarUrl = '',
+  audioTarget = null,
+}: Holographic3DProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Live ref so audio-target identity changes never rebuild the scene.
+  const audioTargetRef = useRef<MediaStream | HTMLMediaElement | null>(audioTarget);
+  audioTargetRef.current = audioTarget;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -156,6 +177,101 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
     }
     headGroup.add(hairGroup);
 
+    // ----- Optional rigged GLTF avatar (2026-11-01 realism WO4) -----
+    // When avatarUrl loads, the procedural body is swapped for the rigged
+    // model: normalized scale, hologram-tinted PBR materials, first idle
+    // animation clip via AnimationMixer, and mouth morph targets discovered
+    // by common naming (mouthOpen / jawOpen / viseme_aa ...).
+    const avatarMouthInfluences: Array<{ mesh: THREE.Mesh; index: number }> = [];
+    let avatarMixer: THREE.AnimationMixer | null = null;
+    const avatarGroup = new THREE.Group();
+    avatarGroup.visible = false;
+    holoEntity.add(avatarGroup);
+    const MOUTH_MORPH_KEYS = ['mouthopen', 'jawopen', 'viseme_aa', 'viseme_a', 'mouth_open', 'fcl_mth_a', 'a'];
+    if (avatarUrl) {
+      new GLTFLoader().load(
+        avatarUrl,
+        (gltf) => {
+          const model = gltf.scene;
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z) || 1;
+          const scale = 3.0 / maxDim;
+          model.scale.setScalar(scale);
+          model.position.y = 0.15 - box.min.y * scale;
+          model.traverse((obj) => {
+            const mesh = obj as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            const mat = mesh.material as any;
+            if (mat && mat.isMeshStandardMaterial) {
+              mat.color.setHex(0x00f0ff);
+              mat.emissive.setHex(0x00c8e8);
+              mat.emissiveIntensity = 0.35;
+              mat.transparent = true;
+              mat.opacity = 0.92;
+            }
+            if (mesh.morphTargetDictionary) {
+              for (const [name, index] of Object.entries(mesh.morphTargetDictionary)) {
+                if (MOUTH_MORPH_KEYS.includes(name.toLowerCase())) {
+                  avatarMouthInfluences.push({ mesh, index });
+                  break;
+                }
+              }
+            }
+          });
+          avatarGroup.add(model);
+          if (gltf.animations.length > 0) {
+            avatarMixer = new THREE.AnimationMixer(model);
+            avatarMixer.clipAction(gltf.animations[0]).play();
+          }
+          avatarGroup.visible = true;
+          torsoMesh.visible = false;
+          neckMesh.visible = false;
+          headGroup.visible = false;
+        },
+        undefined,
+        () => {
+          /* avatar failed to load: keep the procedural hologram */
+        }
+      );
+    }
+
+    // ----- Audio-driven lip sync (real amplitude analysis) -----
+    // A Web Audio AnalyserNode measures the provided TTS element or mic
+    // stream; RMS amplitude becomes the mouth-open value. Falls back to
+    // the procedural viseme rhythm when no audio target is supplied.
+    let audioContext: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let audioSource: MediaElementAudioSourceNode | MediaStreamAudioSourceNode | null = null;
+    const sampleAmplitude = (): number | null => {
+      if (!analyser) return null;
+      const buf = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      return Math.sqrt(sum / buf.length);
+    };
+    const target = audioTargetRef.current;
+    if (target) {
+      try {
+        const AudioCtor = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+        audioContext = new AudioCtor();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.6;
+        audioSource =
+          target instanceof MediaStream
+            ? audioContext.createMediaStreamSource(target)
+            : audioContext.createMediaElementSource(target as HTMLMediaElement);
+        audioSource.connect(analyser);
+      } catch {
+        analyser = null; // audio hook-up failed: keep the procedural viseme
+      }
+    }
+
     // ----- Volumetric emitter: rings + light cone + dust -----
     const ringsGroup = new THREE.Group();
     ringsGroup.position.y = -2.3;
@@ -236,7 +352,10 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
     const clock = new THREE.Clock();
 
     const animate = () => {
+      avatarMixer?.update(clock.getDelta());
       const elapsed = clock.getElapsedTime();
+      const rawAmp = sampleAmplitude();
+      const speakAmp = rawAmp !== null ? Math.min(1, rawAmp * 3.2) : null;
 
       mouse.x += (mouse.targetX - mouse.x) * 0.05;
       mouse.y += (mouse.targetY - mouse.y) * 0.05;
@@ -305,9 +424,16 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
         const pulse = 0.6 + Math.sin(elapsed * 12) * 0.3;
         keyLight.intensity = 8 + pulse * 4;
         bloom.strength = 0.9 + pulse * 0.35;
-        // proto-viseme: mouth opens/closes in a speech-like rhythm
-        const viseme = 0.5 + Math.abs(Math.sin(elapsed * 11)) * 1.6;
-        mouth.scale.set(1, viseme, 1);
+        // lip sync: audio amplitude when available, else speech-like rhythm
+        if (avatarMouthInfluences.length > 0) {
+          const open = speakAmp ?? 0.45 + Math.abs(Math.sin(elapsed * 11)) * 0.45;
+          avatarMouthInfluences.forEach(({ mesh, index }) => {
+            if (mesh.morphTargetInfluences) mesh.morphTargetInfluences[index] = open;
+          });
+        } else {
+          const viseme = speakAmp !== null ? 0.5 + speakAmp * 1.6 : 0.5 + Math.abs(Math.sin(elapsed * 11)) * 1.6;
+          mouth.scale.set(1, viseme, 1);
+        }
       } else {
         entityMats.forEach((m) => {
           m.uniforms.uColor.value.setHex(0x00f0ff);
@@ -317,6 +443,9 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
         keyLight.intensity = 8;
         bloom.strength = 0.9;
         mouth.scale.set(1, 0.6, 1);
+        avatarMouthInfluences.forEach(({ mesh, index }) => {
+          if (mesh.morphTargetInfluences) mesh.morphTargetInfluences[index] = 0;
+        });
       }
       entityMats.forEach((m) => { m.uniforms.uTime.value = elapsed; });
 
@@ -333,6 +462,10 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationId);
+      avatarMixer?.stopAllAction();
+      try { audioSource?.disconnect(); } catch { /* already gone */ }
+      try { analyser?.disconnect(); } catch { /* already gone */ }
+      void audioContext?.close().catch(() => undefined);
       composer.dispose();
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
@@ -343,7 +476,7 @@ export default function Holographic3D({ state = 'idle', className = '' }: Hologr
       });
       renderer.dispose();
     };
-  }, [state]);
+  }, [state, avatarUrl]);
 
   return (
     <div
