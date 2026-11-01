@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Mirror<->satellite sentinel pairs that federation_satellite_sync.py --verify-only checks byte-identical after every sync (#1689). Each pair maps an open-repo path to the satellite-repo surface the sync contract maintains. Extend this manifest to grow the sweep; no code edit needed.",
   "provenance": {
     "issue": 1689,
@@ -55,6 +55,121 @@
       "satellite": "Supremeai-bd/supremeai-api",
       "path": "gateway/main.py",
       "note": "package entrypoint required by COPY gateway/ gateway/ and the gateway.* import namespace (#1772); distinct surface from the root main.py pair above (#3656)"
+    },
+    {
+      "open": "api-schemas/context-assembly.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/context-assembly.schema.json"
+    },
+    {
+      "open": "api-schemas/dashboard.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/dashboard.schema.json"
+    },
+    {
+      "open": "api-schemas/federated-ci-failure.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/federated-ci-failure.schema.json"
+    },
+    {
+      "open": "api-schemas/guardian-evaluation.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/guardian-evaluation.schema.json"
+    },
+    {
+      "open": "api-schemas/heartbeat.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/heartbeat.schema.json"
+    },
+    {
+      "open": "api-schemas/instruction-envelope.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/instruction-envelope.schema.json"
+    },
+    {
+      "open": "api-schemas/memory-search.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/memory-search.schema.json"
+    },
+    {
+      "open": "api-schemas/permissions.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/permissions.schema.json"
+    },
+    {
+      "open": "api-schemas/provider-registry.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/provider-registry.schema.json"
+    },
+    {
+      "open": "api-schemas/task-router.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/task-router.schema.json"
+    },
+    {
+      "open": "api-schemas/telemetry-log.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/telemetry-log.schema.json"
+    },
+    {
+      "open": "api-schemas/webhook-notification.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/webhook-notification.schema.json"
+    },
+    {
+      "open": "api-schemas/websocket-events.schema.json",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "contracts/schemas/websocket-events.schema.json"
+    },
+    {
+      "open": "tests/test_tiny_brain_service.py",
+      "satellite": "Supremeai-bd/supremeai-core",
+      "path": "tests/test_tiny_brain_service.py"
+    },
+    {
+      "open": "tests/test_core_exports.py",
+      "satellite": "Supremeai-bd/supremeai-core",
+      "path": "tests/test_core_exports.py"
+    },
+    {
+      "open": "tests/test_brain_curriculum.py",
+      "satellite": "Supremeai-bd/supremeai-core",
+      "path": "tests/test_brain_curriculum.py"
+    },
+    {
+      "open": "tests/test_kaggle_orchestrator_dual_brain.py",
+      "satellite": "Supremeai-bd/supremeai-core",
+      "path": "tests/test_kaggle_orchestrator_dual_brain.py"
+    },
+    {
+      "open": "tests/test_gateway_foundation.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "tests/test_gateway_foundation.py"
+    },
+    {
+      "open": "tests/test_gateway_shield.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "tests/test_gateway_shield.py"
+    },
+    {
+      "open": "tests/test_mcp_access_policy_guard.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "tests/test_mcp_access_policy_guard.py"
+    },
+    {
+      "open": "tests/test_openapi_breaking_guard.py",
+      "satellite": "Supremeai-bd/supremeai-api",
+      "path": "tests/test_openapi_breaking_guard.py"
+    },
+    {
+      "open": "tests/test_browser_foundation.py",
+      "satellite": "Supremeai-bd/supremeai-browser",
+      "path": "tests/test_browser_foundation.py"
+    },
+    {
+      "open": "tests/test_browser_injection_canary.py",
+      "satellite": "Supremeai-bd/supremeai-browser",
+      "path": "tests/test_browser_injection_canary.py"
     }
   ]
 }
