@@ -23,48 +23,48 @@
   owner prunes #4984/#4988/#4995: 62P/0F (below); scripts/ops/_INDEX.md
   559→303 scripts, 6→2 hand sections.
 - **Landed**: r21 re-anchor #5033 (c014fd9) — restart file after the
-  purge; r22 #5053 (9bcac54) — brownout no-pick receipt, 2nd flat
-  census across the restart boundary.
+  purge; r22 #5053 (9bcac54) — brownout no-pick receipt; r23 #5072
+  (28f519b) — first certified clean dispatch + zombie-PR escalation
+  #5068 (own stale PR #4872 → closed-unmerged, cross-confirmed by
+  glm04 r4 #5090; class-kill proposal: auto-close bridge PRs whose
+  target blob no longer matches main).
 
-## Cycle 23 (2026-11-02 04:09+08) — certified clean + zombie-PR housekeeping
+## Cycle 24 (2026-11-02 05:09+08) — brownout rerun, #5068 payoff, 4th flat
 
-- Dispatch CERTIFIED clean: board revived via tower fallback (23 rows,
-  0 open P0, claimable 0/5) after gh CLI absence — first certified read
-  in the lean era; heartbeat first-try OK.
-- Found a zombie in my own lane: stale PR #4872 (old r20 worklog) still
-  open while its target file was removed by the docs purge — merging
-  would resurrect purged content. Escalated via github_create_issue:
-  **#5068** requests close-as-superseded (r20 already landed 843a8d0/
-  #4870; chain continues in #5033/#5053) and proposes the class-kill:
-  auto-close bridge PRs whose target blob no longer matches main.
-- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ d09d0c2
-  (8.64s) — 3rd consecutive flat. CI-gate rehearsal 5/5 PASS; standing
+- Tower brownout window: first dispatch + 2 heartbeat retries failed
+  (429 / error / error); per doctrine no certification during UNSEEN,
+  census-as-backoff instead. Healthy rerun after 120s: heartbeat OK,
+  board read REAL — 4 open WOs post MEGA-DRAIN #2 (27→2, sentry c114),
+  none claimable → certified 0/5, no-pick.
+- **#5068 payoff confirmed**: PR #4872 (my zombie r20 worklog PR,
+  target file purged) is closed-UNMERGED ~9.5h after open — exactly the
+  requested outcome; nothing resurrected, chain continues here. This
+  validates the github_create_issue escalation path for zombie PRs.
+- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 114dd53
+  (8.61s) — 4th consecutive flat. CI-gate rehearsal 5/5 PASS; standing
   watch: claim_ttl fix intact (TTL SSOT True=3h, OSError fail-closed
   True).
-- No agent-lane defect; no churn (Invariant 7) — the only lane write is
-  this receipt plus the #5068 escalation.
+- No agent-lane defect; no churn (Invariant 7).
 
 ## Reflection Evidence
 
-- **why:** the first certified board read of the lean era turned up a
-  real piece of housekeeping in my own lane: a zombie PR whose target
-  file a fleet-wide purge had removed. Closing my own PR is outside
-  bridge-lane tool reach, so the root-cause-minded move is an
-  escalation that both retires the zombie AND names the class-kill
-  (target-blob watchdog) so other agents' purged PRs stop inflating
-  the open-PR count sentry watches. Filing it keeps the open count
-  honest without touching pr_lifecycle_guard (documented fail-open,
-  out of scope).
-- **alternatives_rejected:** merging PR #4872 as-is (resurrects
-  purged content against owner intent, refs #762); editing
-  pr_lifecycle_guard to auto-close such PRs myself (documented
-  fail-open, forbidden to this lane, and a code churn without a
-  solver task); staying silent about the zombie (the open-PR count is
-  a fleet health signal — sentry c114 tracks its growth).
+- **why:** this cycle closes the loop on the #5068 escalation — the
+  zombie PR was closed-unmerged exactly as requested and an
+  independent lane (glm04) cross-confirmed the outcome, proving the
+  issue-escalation path works for problems the bridge lane cannot fix
+  itself. The brownout rerun (429 → 120s backoff → healthy board read)
+  re-validated census-as-backoff a third time; the board is at its
+  smallest since the purge (4 WOs), which makes the 4th flat census
+  the cleanest stability datum yet.
+- **alternatives_rejected:** certifying during the 429 window
+  (UNSEEN ≠ zero, U2); resubmitting anything while the tower was
+  erroring (retry-after-recovery only — no blind resubmit, no
+  duplicate PRs); treating the 4 remaining WOs as claimable (all
+  other agents' receipts in their own lanes).
 
 ## Rollback
 
-Docs-only in-place replace of the Cycle 23 section (baseSha recorded at
-submission): revert of the landed r23 PR restores the r22 blob. Issue
-#5068 is filed but harmless if closed unused; no code, test, or
+Docs-only in-place replace of the Cycle 24 section (baseSha recorded at
+submission): revert of the landed r24 PR restores the r23 blob. Issue
+#5068 already served its purpose (PR #4872 closed); no code, test, or
 workflow surface touched this cycle.
