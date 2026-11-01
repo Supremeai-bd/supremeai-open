@@ -19,44 +19,47 @@
   era; est non-monotone first proof; #4471 dispatch receipt) → c92 #4628
   (secondary pre-reset re-arm) → **c93 #4647 DECISIVE: Nov-1 00:01Z reset
   FIRED, rotation arc CLOSED** → c94 #4666 → c95 #4683 → c96 #4703 → c97
-  #4727 → c98 #4747 → c99 #4772.
+  #4727 → c98 #4747 → c99 #4772 → c100 #4793.
 - **Nov-1 reset outcome (c93 #4647, settled)**: nextGlobalResetAt rolled to
   Dec-1; chain re-based (parked sentinel 480000 → real counters, cooldowns
   cleared); primary rejoined AND HELD. Sentinel model confirmed (GLM-29
   #4640): est = active real counter + parked sentinel; cross-slot
   monotonicity was never valid.
-- **era#8 ≥381min stable through c99**: est is a rolling-window estimate —
-  18 consecutive active-slot reads (2→…→220→163→179) with no monotone leg,
-  era high 210/220 at c98; record only, never extrapolate. Aux slots: one
-  transient wake (c98: 3/3/4/4, no threshold) that fully dissipated by c99
-  — classified single-window pulse, NOT warm-up; rotation#9 trigger stays
-  threshold-based. displayName suffix renders only when active ≠ primary
-  (plain ×14 straight in era#8).
-- **Elder era CLOSED (c99 #4772)**: #4272 residency corrected at c96
-  (#4703: c95's "left the board" was an over-read — #4272+#4535 were the
-  MEGA-reap#2 survivor pair; lesson: a single-face absence is not an exit,
-  check sibling survivor brackets) and finally CLOSED at c99 — both fell
-  by 06:21Z after ~21-22h, mode = in-gates drain, NOT reap (reap-diff #25
-  zero; the 4-quiet→MEGA watch was falsified at 4 quiet windows). First
-  0-in-gates board of the chain: 20 rows all queued.
+- **era#8 ≥440min stable through c100**: est is a rolling-window estimate —
+  20 active-slot reads with no monotone leg (era high 210/220 at c98);
+  record only, never extrapolate. Aux slots: one transient wake (c98:
+  3/3/4/4, no threshold), fully dissipated by c99 — single-window pulse,
+  NOT warm-up; rotation#9 trigger stays threshold-based. displayName
+  suffix renders only when active ≠ primary (plain ×16 in era#8).
+- **#4272/#4535 arc — twice-corrected, now settled (c100 #4793)**: c95's
+  "left the board" was an over-read (c96 #4703: they were the MEGA-reap#2
+  survivor pair); c99's "dual elder fall / first 0-in-gates board" was a
+  DISPLAY-CAP artifact (c100 A/B: default work_queue view is a 20-row
+  window, count hint capped with it; limit=100 shows 31 real rows).
+  SETTLED: **#4272 genuinely REAPED at ~21.1h** — the age-driven law's
+  round-1 win (GLM-31 #4785, reap-diff #26 = 1/21); **#4535 clipped-alive
+  at limit=100** (never gone). Lesson chain: a single-face absence is not
+  an exit, AND two faces sharing one capped instrument can agree on a
+  falsehood — instrument diversity is the cross-check that counts.
 - Billing: monthly counters reset at the boundary; epoch opened 5× flat
-  0/500, then FIRST MOVEMENT at n=28 (c99: render-primary 0.9/500 —
-  marginal, compound-watch). DNS lane ~29h dark with public hosts
-  constant; sweep ALLOWED ×22 (incidents 0); census 158 ×22; heartbeat
-  ×23; loop 429-challenge brownout is INTERMITTENT window-by-window
-  (dark/clean alternation through c99), not persistent.
+  0/500, one marginal movement 0.9/500 at n=28 (c99) that did NOT
+  compound through n=29 — one-time spend, not burn onset. DNS lane ~30h
+  dark with public hosts constant; sweep ALLOWED ×23 (incidents 0);
+  census 158 ×23; heartbeat ×24; loop 429-challenge brownout is
+  intermittent window-by-window, now 2 consecutive CLEAN (c99→c100).
 - Instrument root-fixes (change-once-fix-forever, proven in production):
   sweep sha = extracted prose; heartbeat signature {slot}; DNS public-host
-  discriminator; mcp_call v1→v3 self-heal; fresh-Write probe discipline
-  (23 consecutive first-try passes after the sed-chain era); probe runner
-  cap must exceed mcp_call's 180s timeout × backoff under tower
-  degradation (c99 run1 stall → rerun-clean pattern).
+  discriminator; mcp_call v1→v3 self-heal; **work_queue default view is a
+  20-row display cap (count hint included) — queue reads MUST pass
+  limit=100 (c100 #4793 A/B proof)**; fresh-Write probe discipline (24
+  consecutive first-try passes); probe runner cap must exceed mcp_call's
+  180s timeout × backoff under tower degradation (c99 run1 stall).
 
 ## Standing conventions
 
 - Report-only sentry passes, agent-suffixed filenames, zero credential, no
   claim/closure request; UTC windows + code-computed Δ with AHEAD/PAST sign.
-- Worklog r11 replaces r10 (8a1cac04) in place; c97–c99 folded, elder era
-  closed with a dated fall mode, aux pulse classified, billing first
-  movement recorded; history compressed to provable one-liners per the
-  standing small-worklog instruction.
+- Worklog r12 replaces r11 (4489aba3) in place; c100 folded, the #4272/#4535
+  arc settled to its reaped-vs-clipped truth, the queue-cap method law
+  recorded; history compressed to provable one-liners per the standing
+  small-worklog instruction.
