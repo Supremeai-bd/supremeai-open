@@ -31,44 +31,40 @@
 - 49 (04:2x) | PII 3rd pin at 166 → plateau LEADING (ladder's 2nd full arc); pick-plane dark ×2 = honest UNSEEN (U2); census 18→22 accumulation deepens; #4535 25.1h 16th solo window | PR #5080
 - 50 (05:2x) | SWEEP #4 fires: census 22→6, whole pile reaped, 5 fresh mints refill (law 9/9); PII 4th pin at 166 = 163-arc depth match; #4535 26.2h survived 3rd structural harvest | PR #5101
 - 51 (06:2x) | PII 5th pin at 166 — exceeds the 163 arc, longest run at any level; census UNSEEN (6/6 brownout, first fully-dark since C44); #4535 age UNSEEN, last 26.2h | PR #5122
+- 52 (07:2x) | PII 6th pin at 166 (~5h); census UNSEEN 2nd straight cycle = new worst-streak; #4535 UNSEEN 2nd cycle, record frozen at 26.2h | PR #5130
 
-## Cycle 52 (2026-11-02 07:2x+08) — 6th pin at 166; census dark for a 2nd straight cycle
+## Cycle 53 (2026-11-02 08:2x+08) — 7th pin at 166; census dark-streak hits 3
 
-- Loop verify 9/9 on f26b0d1; pick plane dark once, then
-  answered clean on retry (0/5).
-- **Tripwire re-arm #40: 1×429 → RED try 2 (2/3 exposed).
-  PII 166→166 (+0) — SIXTH consecutive pin, ~5h at this
-  level. The 163 arc broke at 4 points with +3; the 166
-  plateau keeps lengthening instead. No verdict, no
-  forecast — the run is the datum.** 40/40 verdicts, zero
-  false cleans; fail-open STILL LIVE, owner redeploy
-  pending.
-- **Census UNSEEN again: 6 attempts, all brownout — 2nd
-  consecutive fully-dark census, a new worst-streak for
-  this plane (previous worst: single-cycle darks at C44
-  and C51). Honest UNSEEN, not zero (U2).** Probe answered
-  RED in the same window: per-plane darkness persists
-  while the probe endpoint stays up.
-- **#4535 UNSEEN for a 2nd consecutive cycle — last seen
-  26.2h surviving SWEEP #4. If alive it is ~28.2h, but
-  that is extrapolation, not observation: the record
-  watch stays frozen at the last seen value.**
-  roster=[4535] as of last observation.
+- Loop verify 9/9 on 6f06678; pick clean (0/5).
+- **Tripwire re-arm #41: 1×429 → RED try 2 (2/3 exposed).
+  PII 166→166 (+0) — SEVENTH consecutive pin, ~6h at this
+  level, nearly double the 163 arc's 4-point depth. The run
+  remains the datum; a break will be recorded when it
+  happens, not before.** 41/41 verdicts, zero false cleans;
+  fail-open STILL LIVE, owner redeploy pending.
+- **Census UNSEEN 3rd consecutive cycle: 6/6 brownout —
+  the dark-streak extends to 3. Probe answered RED in the
+  same window every cycle of the streak: the census plane's
+  dark state is now a durable regime, not a blip. What
+  changed for this plane after SWEEP #4 is UNSEEN; the
+  streak itself is the structural observation.**
+- **#4535 UNSEEN 3rd consecutive cycle — frozen at last-
+  seen 26.2h (surviving SWEEP #4). Extrapolated ~29.2h is
+  not recorded as observation.** roster=[4535] as of last
+  observation.
 
 ## Reflection Evidence
 
-- **why:** two straight dark census cycles test a different
-  honesty muscle than a single dark cycle — the temptation is
-  to quietly interpolate the missing hours. The frozen-last-
-  seen convention (report 26.2h + "UNSEEN since") keeps the
-  record's integrity worth more than its completeness. The
-  6th pin was recorded with the same non-forecast discipline
-  as the 5th: the moment a pin-run becomes an expectation,
-  the instrument starts seeing what it wants.
-- **alternatives_rejected:** extrapolating #4535 to ~28.2h
-  "as of now" (extrapolation is not observation); reading
-  the 2-cycle dark streak as a harvest in progress (no
-  evidence either way — that is what UNSEEN means);
-  predicting the 166 break from the 163 precedent (observed,
-  never derived); treating the probe's success as evidence
-  the census plane is fine (per-plane is per-plane).
+- **why:** a 3-cycle dark-streak crosses the line from
+  "brownout noise" into "regime change on one plane" — the
+  right response is to re-describe the state precisely
+  (durable regime, cause UNSEEN) rather than keep calling it
+  weather. The frozen-record discipline for #4535 held for a
+  third cycle without strain, which is what a convention is
+  supposed to do.
+- **alternatives_rejected:** blaming the dark streak on
+  SWEEP #4 (correlation in time is not a mechanism — what
+  changed is UNSEEN); extrapolating #4535's age for the
+  third time; forecasting the 166 run's end from its length
+  (the 163 break was observed, never derived); treating 3
+  dark cycles as the board being empty (UNSEEN ≠ zero).
