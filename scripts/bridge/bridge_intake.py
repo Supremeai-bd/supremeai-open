@@ -242,6 +242,46 @@ def gh_first_page(path: str, token: str) -> tuple[list[dict], bool]:
         raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
 
 
+def gh_paged_bounded(path: str, token: str, max_pages: int = 5) -> tuple[list[dict], bool]:
+    """Bounded multi-page GitHub list fetch — cap-tolerant `(items, has_more)` (#5188).
+
+    বাংলা: `gh_paged`-এর exhaustive-with-cap চুক্তি ছোট repo-র জন্য সঠিক ছিল, কিন্তু
+    monorepo-তে closed PR ৫০০ ছাড়ার পর প্রতিটি sync রানেই cap-raise হতে থাকে —
+    "pagination cap reached (5 pages)" প্রতি cron-এ, ফলে workflow স্থায়ী লাল
+    (লাইভ-প্রমাণিত: #5188, run 41369130502; ২০২৬-১১-০২-এর refill-এ একই এক রুট-কজ
+    থেকে ৫টি ci-failed WO)। sync-এর উদ্দেশ্য সাম্প্রতিক verdict-report — সেটা
+    সর্বশেষ updated ৫×১০০ window-এই সম্পূর্ণ থাকে; ৫০০-র পুরনো পূর্ণ-ইতিহাস স্ক্যান
+    কাঠামোগতভাবেই অসম্ভব (GitHub rate-limit × প্রতি-রান ৫০+ কল)। তাই E5-এর
+    নীরব-কাটা নিষেধ অক্ষত রেখে cap-এ এখন raise নয় — `(items, has_more=True)`
+    ফেরত দেয়, সিদ্ধান্ত কলারের (gh_first_page #2265 রীতির N-পেজ সাধারণীকরণ)।
+    ট্রান্সপোর্ট ব্যর্থতা (HTTPError) আগের মতোই BridgeError — fail-honest rails
+    অক্ষত; has_more বুলিয়ান মিথ্যা হতে পারে না (rel="next" না থাকলেই False)।
+    """
+    items: list[dict] = []
+    url: str | None = path if path.startswith("http") else f"https://api.github.com{path}"
+    pages = 0
+    while url:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "supremeai-bridge-intake",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                body = json.loads(resp.read().decode() or "[]")
+                items.extend(body if isinstance(body, list) else [])
+                url = _next_link(resp.headers.get("Link", ""))
+        except urllib.error.HTTPError as exc:
+            raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
+        pages += 1
+        if url and pages >= max_pages:
+            return items, True  # (#5188) bounded window — সৎ has_more সংকেত, raise নয়
+    return items, False
+
+
 # (#2547) Bridge PR-এর দুই লেন: v2 `bridge-land/<task_id>` (private স্যাটেলাইট),
 # solver `bridge/<task_id>` (সরাসরি OPEN_REPO)। ক্রম গুরুত্বপূর্ণ নয় —
 # "bridge-land/x" কখনো "bridge/" prefix-এ মেলে না ("bridge-" এর পরে "/" নেই)।
@@ -1140,6 +1180,9 @@ def cmd_sync(token: str) -> int:
     # per-repo fetch errors instead; remaining repos keep reporting; the run
     # still exits honestly non-zero AFTER processing everything (see below).
     sync_errors: list[str] = []
+    # (#5188) bounded closed-PR window-এর সৎ নোট — error নয় (exit code-এ যায় না),
+    # কিন্তু নীরব-কাটাও নয়: নিজস্ব সেকশনে উচ্চস্বরে ছাপা হয়।
+    window_notes: list[str] = []
     # (#2547) সলভার-লেন অন্ধত্ব শেষ: closed-PR স্ক্যানে OPEN_REPO প্রথমে — সলভার লেন
     # সরাসরি open repo-তে `bridge/<task_id>` PR খোলে; পুরনো স্ক্যান শুধু private
     # স্যাটেলাইটের `bridge-land/` চিনত, ফলে solver-lane PR merge হয়েও public WO
@@ -1151,11 +1194,26 @@ def cmd_sync(token: str) -> int:
         # E5: ৪০-এর window বাদ, পুরো closed-PR ইতিহাস (Link rel=next) — নীরভ
         # cron-slot-এর পর পুরনো landed PR-ও report হতে হবে, নাহলে public issue
         # চিরকাল in-gates/queued-এ আটকে থাকে।
+        # (#5188) সংশোধন: monorepo-তে closed PR >500 হওয়ায় E5-এর exhaustive চুক্তি
+        # প্রতি রানেই cap-raise করত (workflow স্থায়ী লাল)। এখন bounded window —
+        # সর্বশেষ updated ৫×১০০; has_more সৎ নোট, sync_errors-এ নয় (বিস্তারিত
+        # gh_paged_bounded docstring-এ)। পুরনো stranded verdict-এর দায় এখন
+        # watchdog/sweep-বহিঃপ্রবাহে — sync এখনও window-এর প্রতিটি bridge-lane PR
+        # verdict রিপোর্ট করে।
         try:
-            pulls = gh_paged(f"/repos/{repo}/pulls?state=closed&sort=updated&per_page=100", token, max_pages=5)
+            pulls, pulls_more = gh_paged_bounded(
+                f"/repos/{repo}/pulls?state=closed&sort=updated&per_page=100", token, max_pages=5
+            )
         except BridgeError as exc:
             sync_errors.append(f"PR fetch failed: {str(exc)[:160]} ({repo})")
             continue
+        if pulls_more:
+            window_notes.append(
+                f"closed-PR scan bounded at 5x100 most-recently-updated ({repo}) — "
+                "older closed PRs beyond the window are high-volume steady state, "
+                "not an error; verdict reporting is complete for bridge-lane PRs "
+                "updated within the window"
+            )
         for p in pulls:
             task_id = strip_lane_prefix((p.get("head") or {}).get("ref", ""))
             if not task_id:
@@ -1242,6 +1300,10 @@ def cmd_sync(token: str) -> int:
     print("== bridge sync ==")
     for line in results or ["nothing to sync"]:
         print(" -", line)
+    if window_notes:
+        print("== bridge sync closed-PR window notes (#5188 bounded scan — fail-honest, not errors) ==")
+        for line in window_notes:
+            print(" ~", line)
     if sync_errors:
         print("== bridge sync repo-level errors (fail-honest) ==")
         for line in sync_errors:
