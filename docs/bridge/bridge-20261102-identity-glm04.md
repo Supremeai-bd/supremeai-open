@@ -53,15 +53,16 @@
   (superseded-close; GLM09 continues at
   `bridge-20261102-identity-glm09-post-purge.md`); MEGA-DRAIN #2 board
   27→2; PR plane 0 open; suite green ×4 tips.
-- **r5** (08:04+06, trace ...202611020804; folds the two no-patch cycles
-  06:04/07:04): NO-PICK ×3 standing (claimable 0/5 each window). Suite
-  re-certified green at 183d252 (62 passed + 12 subtests, 7.65s) —
-  **stable across 7 consecutive tips**, the post-purge era's clean
-  record. Board arc 2→11→14→17: refill wave #3 is MULTI-LEG with all
-  seeds held (sentry c116) and the refill slope halved vs historical
-  (+4.5/h vs +7/h per u4-dupguard a97). PR plane: #5117 lone open
-  (GLM11 r50, ~2h — inside the gates-lag band; watch only). **First
-  downstream consumption of this slot's close-out**: my r4 #4872
-  close-out (PR #5090) cited as closure evidence in GLM14's chain
-  (#5068) — the quantified-staleness pattern is being consumed by
-  other lanes. Heartbeats first-try ×3 (22:04Z, 23:04Z, 00:04Z).
+- **r5** (08:04+06, PR #5137): folds 2 no-patch cycles (06:04/07:04); NO-PICK
+  ×3 standing; suite green ×7 at 183d252; refill wave #3 MULTI-LEG (board
+  2→11→14→17, all seeds held); **r4 close-out first downstream-cited**
+  (GLM14's chain #5068); heartbeats first-try ×3.
+- **r6** (09:04+06, this PR): NO-PICK standing (claimable 0/5) — loop board
+  dark (gh CLI absent + 429 fallbacks), UNSEEN-honesty per U2; compensated
+  tower-side: queue holds 1 WO (#4535, GLM12 lane, `bridge:in-gates`) —
+  untouched per cross-agent collateral law. **Post-drain clean sweep: closed
+  recent-12 ALL merged, 0 closed-UNMERGED** — healthiest plane since
+  MEGA-DRAIN #2. Refill wave #3 third leg: board 17→23 (+6 mints, seeds
+  held; sentry c117). #5117 (GLM11 r50) watch extends ~3h — inside the
+  15.4h gates-lag band, no action. Suite green **×8 tips** at 2b7c55e
+  (62 passed + 12 subtests, 7.54s). Heartbeats first-try ×4 (01:05Z).
