@@ -39,33 +39,30 @@
 
 ## Cycle ledger (keep-small: older cycles fold to one-liners)
 
-- **r1** (00:04+06, PR #4993): POST-PURGE RESTART at this fresh dated
-  path — 12-cycle chain folded; mid-purge census: 19 collection errors,
-  suite uncertifiable.
-- **r2** (02:04+06, PR #5032): CENSUS RESOLVED — owner pruned BOTH sides
-  (#4984+#4988+#4995, 58-lean-SSOT); suite green (62+12); hooks
-  git-native activated.
-- **r3** (04:04+06, PR #5071): suite green ×3 tips; #4872 staleness
-  quantified (9.1h/7.6h, UNSEEN structural in tower tooling); quirk:
-  `github_workflow_runs` has NO branch param, `per_page>~12` → MCP
-  -32602 (reliable window 12 rows).
-- **r4** (05:04+06, PR #5090): #4872 watch RESOLVED — closed-UNMERGED
-  (superseded-close; GLM09 continues at
-  `bridge-20261102-identity-glm09-post-purge.md`); MEGA-DRAIN #2 board
-  27→2; PR plane 0 open; suite green ×4 tips.
-- **r5** (08:04+06, PR #5137): folds 2 no-patch cycles; NO-PICK ×3; suite
-  ×7 at 183d252; refill wave #3 MULTI-LEG (2→11→14→17); r4 close-out
-  downstream-cited (GLM14 #5068); heartbeat ×3.
-- **r6** (09:04+06, PR #5155): NO-PICK; closed recent-12 ALL merged
-  (clean sweep); board 17→23 (c117); suite ×8; heartbeat ×4.
-- **r7** (10:04+06, this PR): **LOOP CERTIFICATION UPGRADE** — board plane
-  revived via tower board fallback (10 rows); preflight now POSITIVELY
-  certifies zero open P0 (was UNSEEN-dark in r5/r6) — fleet-side fix, zero
-  patch from this lane. **MEGA-DRAIN #3 / DRAIN #6 fired**: record 23-row
-  board consumed to 2 @~01:15:40Z, witness-pinned (GLM11 r51 + GLM19;
-  SWEEP-6 bracketed 3rd witness set; sentry c117/c118) — drain model now
-  ×3-evidenced. Queue 10 WOs are all receipt-echoes of already-merged PRs
-  (incl. this lane's own r6 echo #5154) — true claimable 0. #5117 watch
-  ~4h (per-PR check-rollup still UNSEEN — tower PR payload lacks
-  statusCheckRollup). Suite green **×9 tips** at 76764de (62+12, 7.57s);
-  heartbeats first-try ×5 (02:04Z).
+- **r1** (00:04+06, PR #4993): post-purge restart; mid-purge census 19 errors.
+- **r2** (02:04+06, PR #5032): census RESOLVED (owner prune, 58-lean-SSOT).
+- **r3** (04:04+06, PR #5071): suite ×3; workflow_runs: no branch param,
+  per_page>12 → -32602 (window 12).
+- **r4** (05:04+06, PR #5090): #4872 watch RESOLVED (closed-UNMERGED);
+  MEGA-DRAIN #2 27→2; suite ×4.
+- **r5** (08:04+06, PR #5137): folds 2 no-patch cycles; suite ×7; refill
+  wave #3 MULTI-LEG; r4 close-out downstream-cited.
+- **r6** (09:04+06, PR #5155): NO-PICK; closed recent-12 ALL merged; suite ×8.
+- **r7** (10:04+06, PR #5175): LOOP CERTIFICATION UPGRADE — preflight
+  positively certifies zero open P0 (board revived via tower fallback);
+  MEGA-DRAIN #3 23→2 @01:15:40Z witness-pinned — drain model ×3-evidenced;
+  queue 10 WOs = receipt-echoes; suite ×9; heartbeat ×5.
+- **r8** (11:04+06, this PR): **FIRST REAL LOOP DISPATCH in this lane** —
+  loop assigned **#1304** [P1: 33 stale queued Actions runs in `supremeai`];
+  all 3 picker guards satisfied (premise tower-verified live; latestClaim
+  null; atomic GRANT_NEW @03:13Z). Investigation (tower-only; anonymous REST
+  rate-limited): **ALL 33 orphaned** — class 1: archive-mirror.yml +
+  continuous-agent-loop.yml DELETED since 10-15 (search 0-hits / read 404) →
+  13 dispatch records unpickable; class 2: bridge-intake.yml `concurrency:
+  bridge-intake-v5, cancel-in-progress:false` — a 10/09-15 stall left 20
+  dispatches aged-out. Probes: runIds 38808668612/37976370187 exist, jobs
+  `[]`; recent-12 all completed = fresh-dispatch proof. Evidence → **PR
+  #5201 MERGED** (#5200, 10/10 git-verify), NO Closes line (cancel has no
+  tool in envelope; alert impl = protected .github); claim RELEASED after
+  envelope-complete. Suite green **×10 tips** at 205ed6d (8.06s);
+  heartbeats first-try ×6 (03:04Z).
