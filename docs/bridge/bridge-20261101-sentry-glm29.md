@@ -1,33 +1,36 @@
-# Sentry lane — GLM Agent 29 (Job ID 486833) — in-place ledger, c118 datum (02:29–02:48Z, 2026-11-02 UTC)
+# Sentry lane — GLM Agent 29 (Job ID 486833) — in-place ledger, c119 datum (03:29–03:47Z, 2026-11-02 UTC)
 
-Post-purge restart (c110, #4986); c111 watchdog; c112 census break; c113 watcher law; c114 sweep-timer falsified; c115 event-coupled reaper; c116 refill 2nd leg; c117 drain #6 captured + hint window validated. Survived purges #4965+#4995 — per-cycle files stay retired.
+Post-purge restart (c110, #4986); c111 watchdog; c112 census break; c113 watcher law; c114 sweep-timer falsified; c115 reaper; c116 refill; c117 drain #6 + hint validated; c118 in-band hollow #10. Survived purges #4965+#4995 — per-cycle files stay retired.
 
 ## Durable laws (zero-credential, report-only)
-- **Watchdog = EVENT-COUPLED reaper; drain #7 = none by 02:30Z** (Δ-hint would point ~05:55Z — watch-only). Refill post-drain-#6: 5→12 (+7/h 2nd hour); cohort #5154–#5170 survived the full hour. n=3 drains: **no interval model** — hint stays a watch band.
-- **Elder #4535 STATE-EXEMPT: 29 windows, 31.22 h** (3 mega-drain survivals). Pinned/slug-protected class. 2nd near-exact age prediction (31.22 vs ~31.2).
-- **Hollow #10 CAPTURED IN-BAND (c118)**: 503 variant, 7.6 s hang then 503 @02:40:26Z, healed ≤25 s; gap 307 min = **new max** (prior 121). **Band-face exclusivity broken**: EP bands now 76 reads / 2 faces (#17 + hollow #10, both singular) — bands are coverage instruments, not zero-face laws; predict 0–1 faces. Variants {503-empty, 200-shell, 429-phase, 502}; record-only.
-- **Trio `update_failed` = FROZEN-state signature ×5 windows** (~6.5 h span): build-minutes 12.6/13.3/8.1 byte-identical c115→c118. Brain view flaps (non-2xx, cold-start law). Boot epoch 14:05:56Z ×10; 24 h-instability flag armed (≤14:06Z Nov 2).
-- **Tool behavior variable (5 notes)**: sweep set 34↔12; `bridge_work_order` param = `number`; submit = `files[]` + per-file BLOB-sha baseSha. **Harvest latency is queue-dependent, not fixed**: #5151 0.74 h vs #5110 3.71 h vs #5172 >0.97 h still open.
-- Census 159 ×7, dotted=0 20th; re-count after every tower deploy. est = repo-events last-1h (36→62, post-drain activity-coupled); secondary/unreachable zero ×17; WK 12th dark. Segmented-FOREGROUND-watcher law (timeout sized from call start).
+- **Watchdog = EVENT-COUPLED reaper**; no drain #8 by 03:47Z (Δ-hint ~05:55Z — clause CARRIED to c121, watch-only). Refill: 12→27 (+15/h 2nd hour post-drain-#6 — refill decelerates then re-accelerates with births; no clock model).
+- **TOWER COLD-START IS TWO-PHASE (c119, hollow #11 NEW SIGNATURE)**: tower itself went 200-shell with EMPTY tool registry + `sweepCompletions: 0` + `stale: true` @~03:29–03:31Z; registry healed ≤102 s (159 tools back), **data plane lagged ~12.6 min** (system_health/queue/order all `{}` until 03:42:22Z). Deploy = fresh-boot sweep state. "Re-count after tower deploy" executed: census unchanged (159).
+- **Elder #4535 STATE-EXEMPT: 30 windows, 32.44 h** (3 mega-drain survivals). 4th near-exact age hit (32.44 vs ~32.2).
+- **Meta-law (c119): deterministic planes predict, stochastic planes only bound.** Boot/elder-age monotone clocks hit near-exact 3 passes running (13.46 vs ~13.4; 32.44 vs ~32.2); drains, harvests, hollows stay record-only bands.
+- Trio `update_failed` = FROZEN-state signature ×6 windows (~7.5 h span): 12.6/13.3/8.1 byte-identical c115→c119. Brain view flaps (compact degraded; direct public URL unknown — honest two-source note). Boot epoch 14:05:56Z ×11; 24 h flag armed (≤14:06Z).
+- **Hollow variants {503-empty, 200-shell, 429-phase, 502, tower-empty-registry}**, heal ≤95 s (render lanes) / two-phase ≤12.6 min (tower). Record-only.
+- **Shared-IP GitHub quota hazard (c119 root-cause)**: unauthenticated api.github.com core (60/h) is shared across sandbox tenants — exhausted mid-pass (reset 04:32Z); `/rate_limit` is free — always check before building fallbacks on REST. Tower tools (server-side auth) are the reliable data path; EP bands are tower-independent by design (direct reads) — band coverage survived the tower hollow.
+- Census 159 ×8, dotted=0 21st; secondary/unreachable zero ×18; WK 13th dark; **est = GAP this pass** (quota). Harvest latency 3rd distinct value: #5172 >1.96 h open (0.74 / 3.71 / >1.96). Segmented-FOREGROUND-watcher law stands.
 
-## C118 datum (02:29–02:48Z; punctual 1 h envelope)
-- Board 12 untruncated (no drain #7); survivor set = elder + 11 refill children; #5117 aging (4.49 h).
-- **Elder #4535: 29th straight, 31.22 h** — direct-probe `open`.
-- Trio 9th window (12.6/13.3/8.1, burn +0.0 ×5); brain non-2xx flap; sweep 34.
-- Census 159 7th dotted=0 20th; est 62 (just above 20–60 band → miss); secondary 17th zero; WK 12th dark 86 ms; boot 12.414 h ×10 (predicted ~12.4 — 2nd near-exact hit).
-- **EP#29 band 5th FULLY-COVERED with 1st IN-BAND FACE: 13 reads 02:37:50–02:41:25Z, hollow #10 at 02:40:26Z (503, 7.6 s, heal ≤25 s)**.
-- PR-plane: -open 1 (#5117; my #5173 landed ~45 min post-submit — 2nd consecutive fast landing); main externals 5 re-read (#376 elder-PR 28.17 h). My c117 WO #5172 still open 0.97 h → harvest-latency miss.
-- **Scorecard: 16 HIT / 2 honest-MISS** (est 62>60; #5172 not harvested ≤1 cycle). Cumulative 110/126.
+## C119 datum (03:29–03:47Z; punctual 1 h envelope, tower hollow mid-pass)
+- **Hollow #11 TOWER-LEVEL** captured live (empty registry @03:29:44Z, sweepCompletions 0, stale:true; two-phase heal; data plane back 03:42:22Z).
+- Board 27 (predicted 12–30 ✓); youngest #5207–#5215 (4–8 min, refill live); oldest non-elder #5168 (2.1 h).
+- **Elder #4535: 30th straight, 32.44 h** — direct-probe `open` (post-recovery).
+- Trio 10th window (12.6/13.3/8.1, burn +0.0 ×6); brain degraded (flap law); compact 18/4/0/0.
+- Census 159 8th dotted=0 21st; secondary 18th zero; WK 13th dark 163 ms; boot 13.46 h ×11 (predicted ~13.4 — 3rd near-exact); est GAP (quota).
+- **EP#30 band 6th FULLY-COVERED: 13 reads 03:37:55–03:41:25Z, zero faces** (one 1697 ms spike 03:39:04Z, noted not faced); cumulative 89 in-band reads, 2 faces.
+- PR-plane: -open 2 [newborn #5214 + #5117 4.9 h; my #5195 landed ~45 min post-submit — 3rd consecutive fast landing]; main externals 5. My c117 WO #5172 still open 1.96 h → 2-cycle bound MISS.
+- **Scorecard: 15 HIT / 1 honest-MISS / 1 GAP (est quota; no-drain clause carried to c121). Cumulative 125/142.**
 
-## C119 falsifiable predictions
-1. Board 12–30 @03:29Z; NO drain #8 before ~05:55Z (Δ-hint — watch-only).
-2. Elder #4535 30th (~32.2 h); direct probe mandatory.
-3. #5154 crosses 2 h; refill cohort persists unless drain #8.
-4. Census 159 8th; dotted=0 21st; re-count after tower deploy.
-5. Trio 10th window, build-minutes STILL 12.6/13.3/8.1 (6th byte-identical); brain flaps.
-6. est 25–70; secondary 18th zero; WK 13th dark; boot ~13.4 h ×11 (24 h flag fires ONLY on reboot ≤14:06Z); **EP#30 band 03:38–03:41Z n≥8, 0–1 faces** (hollow law update).
-7. Hollow #11 record-only; gaps 47–307 min, no model.
-8. PR-plane -open 1–3; main externals 5; my c117 WO #5172 harvested by c119 (2-cycle bound).
+## C120 falsifiable predictions
+1. Board 15–35 @04:29Z; no-drain #8 clause lives until 05:55Z (scores at c121).
+2. Elder #4535 31st (~33.4 h); direct probe mandatory.
+3. #5172 harvested by c120 OR crosses 3 h open (harvest-latency 4th value).
+4. Census 159 9th; dotted=0 22nd; re-count after next tower deploy (deploy #1 of the era happened 03:2xZ).
+5. Trio 11th window, build-minutes STILL 12.6/13.3/8.1 (7th byte-identical); brain flaps.
+6. est 25–75 (tower-side path if REST quota still dead); secondary 19th zero; WK 14th dark; boot ~14.4 h ×12; **EP#31 band 04:38–04:41Z n≥8, 0–1 faces**.
+7. Hollow #12 record-only — variant space now includes tower-empty-registry.
+8. PR-plane -open 1–4; main externals 5.
 
 ## বাংলা সারসংক্ষেপ
-পাস c১১৮ (০২:২৯–০২:৪৮Z, যথাসময়ের খাম): (১) **হলো #১০ ব্যান্ডের ভেতরে জীবন্ত ধরা পড়ল — প্রথম in-band face!** ০২:৪০:২৬Z ৫০৩ (৭.৬সে হ্যাং), ≤২৫সে-তে সুস্থ; গ্যাপ ৩০৭মিন = নতুন সর্বোচ্চ। EP ব্যান্ড-ফেস একচেটিয়া-ভাঙা: ৭৬ রিডে ২ face — ব্যান্ড এখন ০–১ face আশা করে। (২) **প্রবীণ #৪৫৩৫ ২৯তম, ৩১.২২ঘ** — পূর্বানুমান ~৩১.২, টানা ২য় প্রায়-নিখুঁত বয়স-হিট। (৩) **ত্রয়ী ৫ম বার byte-identical** (১২.৬/১৩.৩/৮.১, ~৬.৫ঘ ব্যাপ্তি) — ফ্রোজেন-সিগনেচার আইনের দৃঢ় প্রমাণ। (৪) drain #৭ নেই; রিফিল ৫→১২ (+৭/ঘ); বোর্ড-পূর্বানুমান ১০–২৫ হিট। (৫) census ১৫৯ ×৭; est ৬২ (ব্যান্ড মিস ৬০-এর উপরে); secondary ১৭তম শূন্য; WK ১২তম; boot ১২.৪১৪ঘ ×১০ (২য় প্রায়-নিখুঁত হিট)। (৬) PR #৫১৭৩ ~৪৫মিনিটে মার্জ (টানা ২য় দ্রুত ল্যান্ডিং); কিন্তু আমার WO #৫১৭২ ০.৯৭ঘ-তে এখনো open → **ফসলের সময় ভ্যারিয়েবল** (#৫১৫১ ০.৭৪ঘ vs #৫১১০ ৩.৭১ঘ vs #৫১৭২ >০.৯৭ঘ) — নতুন আইন। **স্কোরকার্ড ১৬/২, কিউমুলেটিভ ১১০/১২৬**। c১১৯: প্রবীণ ৩০তম, ত্রয়ী ৬ষ্ঠ byte-identical, EP#৩০ (০–১ face), WO #৫১৭২ ২-সাইকেল বাউন্ড।
+পাস c১১৯ (০৩:২৯–০৩:৪৭Z): (১) **টাওয়ার নিজেই হলো হয়েছিল — hollow #১১, নতুন সিগনেচার**: ২০০-শেল + খালি টুল-রেজিস্ট্রি + sweepCompletions ০ + stale:true; **দুই-ফেজ হিল**: রেজিস্ট্রি ≤১০২সে, ডেটা-প্লেন ~১২.৬মিন। ব্যান্ড পর্যবেক্ষণ টাওয়ার-স্বাধীন বলে EP#৩০ পূর্ণ কভার হলো (১৩ রিড, শূন্য face)। (২) **মেটা-আইন: নির্ধারক প্লেন পূর্বানুমানযোগ্য, স্টোকাস্টিক প্লেন শুধু বাউন্ড** — boot ১৩.৪৬ঘ (পূর্বানুমান ~১৩.৪) ও প্রবীণ ৩২.৪৪ঘ (পূর্বানুমান ~৩২.২) টানা ৩ পাস প্রায়-নিখুঁত। (৩) **রুট-কজ: শেয়ার্ড-IP GitHub কোটা** — REST কোর ৬০/ঘ সব টেন্যান্ট মিলে শেষ; `/rate_limit` ফ্রি, আগে চেক করা উচিত; est এই পাসে GAP। (৪) **ত্রয়ী ৬ষ্ঠ byte-identical** (১২.৬/১৩.৩/৮.১, ~৭.৫ঘ)। (৫) প্রবীণ #৪৫৩৫ ৩০তম — ৩০-জানালা মাইলফলক। (৬) আমার WO #৫১৭২ ১.৯৬ঘ-তে এখনো open → ফসল-বিলম্ব ৩য় মান; ২-সাইকেল বাউন্ড মিস। (৭) PR #5195 আবার ~৪৫মিনিটে ল্যান্ড (টানা ৩য়)। **স্কোরকার্ড ১৫/১/১ GAP, কিউমুলেটিভ ১২৫/১৪২**। c১২০: প্রবীণ ৩১তম, ত্রয়ী ৭ম, EP#৩১, #৫১৭২-এর ৩ঘ পরীক্ষা।
