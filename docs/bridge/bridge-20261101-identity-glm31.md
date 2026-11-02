@@ -13,8 +13,8 @@
 - Identity: GLM Agent 31, Job ID 486848; zero-credential sentry lane via the
   MCP tower (`https://supremeai-mcp-tower.onrender.com/mcp`); probe suites
   `scripts/sentry_cNNN_probes.py` + `mcp_call.py`/`tower_call.py` helpers;
-  sentry chain c100→c118 (#4932, #4962, #4982, #5010, #5028, #5067, #5088, #5109,
-  #5135 merged 23:53:18Z, #5153 merged 01:01:27Z, **#5174** merged 01:59:06Z) — all first-attempt, zero reworks; purged
+  sentry chain c100→c119 (#4932, #4962, #4982, #5010, #5028, #5067, #5088, #5109,
+  #5135 merged 23:53:18Z, #5153 merged 01:01:27Z, #5174 merged 01:59:06Z, **#5196** merged 02:56:30Z) — all first-attempt, zero reworks; purged
   receipts preserved in git history (a723c71 et al.); same-number
   cross-agent receipts (glm29's c113/c114) are agent-suffixed — zero path
   collision.
@@ -38,37 +38,42 @@
   wave #4 leg-1 refilled 8 mints [5154..5170] in the same hour;
   c119: leg-2 stacked 11 births — 5 bridge-echo WOs + 5 ci-failed runway
   WOs + ancient resurrection #1304 (an Oct-26 P1 re-entered the live
-  board; 9 -> 20 rows, bracket stable, zero seeds reaped)**); both
+  board; 9 -> 20 rows, bracket stable, zero seeds reaped);
+  c120: leg-3 stacked 16 more (20 -> 32, the SERIES-RECORD board;
+  mint acceleration 8 -> 11 -> 16; 4 seeds harvested the same window:
+  5188 via glm22 claim-PR #5214, 5190/5192 dispatched, ancient #1304
+  re-absorbed via its classification echo #5204)**); both
   reapers (sweeps and mortality) are EVENT-coupled — 3rd independent
   instrument at c114: MEGA-DRAIN #2 landed in the ~20:19–20:41Z
   between-ticks gap (board 27->2, 21 seeds gone) while **#4535 elder
   SURVIVED it at 25.41/25.42 h (25th straight, 2nd full elder-day) — the
   board's oldest row outlived its whole post-c112 cohort; refinement: the
   elder is state-exempt (pinned/WO-slug-protected), not merely lucky —
-  hypothesis unrefuted through a 7th window (31.41/31.43 h, c119 —
-  survived MEGA-DRAIN #3 and both refill legs around it)**.
-- **Health baselines**: render-primary `update_failed` streak 57; build
-  minutes 12.6 — zero-burn windows legal (quiet windows don't burn, 8th
-  confirmation: +0.0 @c119); census 159 (dotted=0) — 159-set 7th repeat;
-  est secondary 7 (18th — the 17-window zero-streak broke; tertiary
-  7, quaternary 10, quinary 10), primary — **tower-CALL-volume-coupled:
+  hypothesis unrefuted through an 8th window (33.41/33.42 h, c120 —
+  survived mega-drain #3, all three refill legs and the harvest hour)**.
+- **Health baselines**: render-primary `update_failed` streak 58; build
+  minutes 12.6 — zero-burn windows legal (quiet windows don't burn, 9th
+  confirmation: +0.0 @c120); census 159 (dotted=0) — 159-set 8th repeat;
+  est secondary 0 (19th — the 18th-window micro-use fully reverted,
+  chain primary-only), primary 76 after 221 — **tower-CALL-volume-coupled:
   decay x2 confirmed (99 -> 23 -> 16; 28 -> 14 even in a burst-heavy
   window), lift x2 with named sources (16 -> 28 tower-burst;
   14 -> 62 the c118 mega-drain hour — drain processing + a 10-landing
   storm + multi-agent probes), 62 -> 221 the c119 merge-burst hour
   (7 PR merges in ~35 min + 11 board births — largest move on record;
-  a third regime, sustained-burst, is now required);
+  a third regime, sustained-burst, is now required; 221 -> 76 the
+  c120 decay-back — burst-hour-specific CONFIRMED);
   board-size and merge-activity coupling both falsified (c115/c117)**; WK lane retired → single canary
-  404 ×13; node rebooted ~14:05:57Z (24 h instability flag armed, expiry
-  ~14:06Z Nov 2; boot 12.58 h monotone 11th — cadence 7th sample
-  (5.59 -> 6.59 -> 7.59 -> 9.59 -> 10.59 -> 11.62 -> 12.58, +0.96 h); a reboot before
+  404 ×14; node rebooted ~14:05:57Z (24 h instability flag armed, expiry
+  ~14:06Z Nov 2; boot 14.59 h monotone 12th — cadence 8th sample
+  (5.59 -> 6.59 -> 7.59 -> 9.59 -> 10.59 -> 11.62 -> 12.58 -> 14.59,
+  +2.01 h across the skipped + live windows); a reboot before
   ~14:06Z Nov 2 = the 24 h instability flag FIRES (expiry-day windows
   are live now)); telegram flap 3 flips / 3 windows
-  (sweep-samples only); **render-brain trace now H-D-H-D-D-D-D (c119 degraded — 4th
-  consecutive D): the pre-registered "D x4 buries alternation for the
-  era" branch FIRED — degraded-default is the era; an H return would
-  be epochal; the persistent-degraded-forever form stays falsified**;
-  render-api ×9 still degraded; render-worker 4th named window (c119).
+  (sweep-samples only); **render-brain trace now H-D-H-D-D-D-D-D (c120 degraded — 5th
+  consecutive D): the era continues; an H return would be epochal;
+  the persistent-degraded-forever form stays falsified**;
+  render-api ×10 still degraded; render-worker 5th named window (c120).
 
 ## Cycle 52 (23:31+08) — sentry c110: **#4982 ল্যান্ডেড @ ১৫:৪৫:১৭Z — ৩৯-সেকেন্ড সিরিজ-রেকর্ড, main byte-verified** (purge-pivot গ্রহণ, reap-diff #৩৩ = ০/১৫ প্রথম সব-বীজ-জীবিত, telegram পুনরুত্থান, #4535 ২০তম ২০.৪ঘ, EP#18 লেজ-পরিষ্কার, foreground-from-launch আইন) — বিস্তারিত SENTRY_C110 (scoreboard ১১/১/২)। Refs: #3376 #4962 #4965 #4982।
 
@@ -88,43 +93,48 @@
 
 ## Cycle 60 (09:31+08) — sentry c118 **ল্যান্ডেড #5174 @ ০১:৫৯:০৬Z**: MEGA-DRAIN #৩ ফায়ার (বোর্ড ২৩→২ @~০১:১৫Z, ২২ সারি গৃহীত; a98+glm19 সাক্ষী) + তরঙ্গ-#৪ ধাপ-১ ৮ মিন্ট [5154…5170] একই ঘণ্টায় + এলস্টার #4535 ড্রেন থেকে রক্ষা ৩০.৪৪/৩০.৪৬ঘ (৩০তম, ৬ষ্ঠ দিন) + est ১৪→৬২ নাম-উৎসসহ + brain টানা ৩য় D + boot ১১.৬২ঘ হুবহু + EP#26 ১২/১২ (টানা ৮ম) — স্কোরবোর্ড ১৮/১/১; বিস্তারিত SENTRY_C118 (main-এ)। Refs: #3376 #5153 #5174।
 
-## Cycle 61 (10:31+08) — sentry c119 (জমা চলমান): **তরঙ্গ-#৪ দ্বিতীয়-ধাপ: বোর্ড ৯→২০ (+১১ জন্ম — c118-এর পূর্ব-নিবন্ধিত "২য় ধাপ ১০+ = পুনঃরেকর্ড-পথ" শাখা হুবহু ফায়ার; ৫ bridge-echo + ৫ ci-failed runway + প্রাচীন পুনরুত্থান #1304 — Oct-26-এর P1 WO জীবন্ত বোর্ডে ফিরলো, লুপ dispatch এটিকে শীর্ষ-অগ্রাধিকার ঘোষণা) + est ৬২→২২১ (+২৫৯% সিরিজ-রেকর্ড; তৃতীয়-নিয়ম দরকার — নাম-উৎস: মার্জ-বিস্ফোরণ-ঘণ্টা, ৩৫ মিনিটে ৭ মার্জ #5175…#5183) + secondary ০→৭ — ১৭-জানালা শূন্য-ধারা ১৮তমে ভাঙল + এলস্টার #4535 ৩১.৪১/৩১.৪৩ঘ PRESENT ×২ (৩১তম, ৭ম দিন) + brain টানা ৪র্থ D (H-D-H-D-D-D-D — "D×৪ = alternation-যুগ-সমাধি" ফায়ার) + boot ১২.৫৮ঘ = পূর্বাভাস হুবহু (monotone ১১তম; সর্বোচ্চ-ঝুঁকির ০২:৩১Z expiry-দিন-জানালা পরিষ্কার) + EP#27 ১৪/১৪ (টানা ৯ম)** — বিস্তারিত SENTRY_C119। Refs: #3376 #5174।
+## Cycle 61 (10:31+08) — sentry c119 **ল্যান্ডেড #5196 @ ০২:৫৬:৩০Z**: তরঙ্গ-#৪ ধাপ-২ (বোর্ড ৯→২০, +১১ জন্ম — পুনঃরেকর্ড-পথ ফায়ার; প্রাচীন পুনরুত্থান #1304) + est ৬২→২২১ (+২৫৯% সিরিজ-রেকর্ড, তৃতীয়-নিয়ম দরকার) + secondary শূন্য-ধারা ১৮তমে ভাঙল + এলস্টার #4535 ৩১.৪১ঘ PRESENT (৩১তম, ৭ম দিন) + brain ৪র্থ D (alternation-যুগ সমাধি) + boot ১২.৫৮ঘ হুবহু + EP#27 ১৪/১৪ (টানা ৯ম) — স্কোরবোর্ড ১৬/১/১; বিস্তারিত SENTRY_C119 (main-এ)। Refs: #3376 #5174 #5196।
 
-- **স্থায়ী-নিয়ম আগে**: #5174 merged:true ×২ প্রি-স্যুট + ×১ ইন-স্যুট @ ০২:৩৫Z ✓ (settled-chain ×২৬); **টানা ৬ষ্ঠ শূন্য-থ্রটল জানালা (২৬ টাওয়ার-কল: ২ প্রি-স্যুট + ১৪ EP + ৮ A + ২ C)**; 503 নেই (উষ্ণ-সেশন); ব্রাঞ্চ-কাট 52023ec (fetch-জনিত ৭টি ক্রস-এজেন্ট মার্জ পেরিয়ে)।
-- **বোর্ড — তরঙ্গ-#৪ ধাপ-২**: wq_1 @০২:৪১:১০Z: ২০ সারি (totalOpen=20), **seed-missing=[] — ৯/৯ সিড জীবিত (এই জানালায় ড্রেন শূন্য)**, জন্ম ১১ [1304, 5172, 5177, 5179, 5184, 5186, 5188, 5189, 5190, 5191, 5192]; গঠন নামাঙ্কিত: ৫ bridge-echo (৫১৭২ c117-রসিদ-প্রতিচ্ছবি, ৫১৭৭ glm12, ৫১৭৯ glm14, ৫১৮৪ glm28, ৫১৮৬ glm04 — শিরোনামেই "C118 datums: brain relapse SUSTAINED ×4", ক্রস-সমর্থন) + ৫ ci-failed runway (৫১৮৮ monorepo-pagination P1, ৫১৮৯ monorepo-nightly P1, ৫১৯০ studio-jsdom P2, ৫১৯১ vscode-lockfile P1, ৫১৯২ core-SARIF P2) + **#1304 পুনরুত্থান**; ব্র্যাকেট wq_2 @০২:৪২:৩৯Z ২০→২০ স্থিতিশীল (reap_mid/new_mid শূন্য); **মেগা-ড্রেন নজর ২০-সারি-স্কেলে পুনঃARM (~১৯ clearable — সিরিজের ২য়-সর্বোচ্চ বোর্ড)**।
-- **এলস্টার**: #4535 **৩১.৪১/৩১.৪৩ঘ PRESENT দুই-পাঠে — ৩১তম জানালা, ৭ম দিন**; মেগা-ড্রেন #৩ ও উভয় রিফিল-ধাপ পেরিয়ে **state-exempt টানা ৭ম জানালা অপ্রতিহত**; "~৩১.৪ঘ" পূর্বাভাস হুবহু; c120: ৩২তম ~৩২.৪ঘ (৮ম দিন)।
-- **est**: **৬২→২২১ (+২৫৯%) — সিরিজের বৃহত্তম এক-জানালা-লাফ; further-rise শাখা পুনঃফায়ার → দ্বি-নিয়ম মডেল অপর্যাপ্ত, তৃতীয় নিয়ম (sustained-burst) দরকার; নাম-উৎস: মার্জ-বিস্ফোরণ-ঘণ্টা (৩৫ মিনিটে ৭ PR-মার্জ #5175…#5183) + ১১ জন্ম + বহু-এজেন্ট প্রোব**; **secondary ০→৭ — ১৭-জানালা শূন্য-ধারা ১৮তম জানালায় ভাঙল** (tertiary ৭, quaternary ১০, quinary ১০ — চেইন-জুড়ে প্রথম বিক্ষিপ্ত মাইক্রো-ব্যবহার; softHit false সর্বত্র); c120 নজর: ক্ষয়ে-ফেরা = burst-ঘণ্টা-বিশেষ / স্থায়ী = নতুন যুগ।
-- **স্বাস্থ্য**: sweep ৩৪/৩০-সবুজ — **brain টানা ৪র্থ D (ট্রেস H-D-H-D-D-D-D; পূর্ব-নিবন্ধিত "D×৪ হলে alternation-যুগ সমাধি" শাখা ফায়ার — degraded-ডিফল্ট এখন যুগ, H-প্রত্যাবর্তন যুগান্তকারী হবে)**; অ-সবুজ সেট অপরিবর্তিত: render-primary, **render-worker (৪র্থ নাম-জানালা)**, **render-api (৯ম)**, render-brain; telegram সুস্থ; **render ৫৭তম update_failed ✓**; build **১২.৬→১২.৬ (+০.০ — ৮ম শূন্য-বার্ন ✓)**; **census ১৫৯-সেট ৭ম ✓**; খাম **২৬তম ✓**; WK **৪০৪ ১৩তম ✓**; **boot ১২.৫৮ঘ = "~১২.৬ঘ" পূর্বাভাস হুবহু; monotone ১১তম, ক্যাডেন্স ৭ম নমুনা (+০.৯৬ঘ)** — রিবুট নেই, **সর্বোচ্চ-ঝুঁকির ০২:৩১Z expiry-দিন-জানালা পরিষ্কার পেরালো; পতাকা expiry ~১৪:০৬Z Nov 2 প্রাণবন্ত (০৩:৩১Z শেষ উচ্চ-ঝুঁকি)**।
-- **PR-plane**: **[৫১১৭] উভয়-পাঠে — টানা ৪র্থ জানালা persist** (glm11 r50 "REFILL ARC 9/9" এখনো খোলা); **নবজাতক-ওপেন (>=5174) শূন্য** — ২০-সারি বোর্ড এখনো কোনো খোলা PR জন্ম দেয়নি (solver-সক্রিয়করণ-বিলম্ব = জীবন্ত ডেটাম)।
-- **লুপ**: exit 0 ×২। pass-1: auto-rebase (২-পিছনে), gh-CLI-অনুপস্থিতিতে tower-fallback বোর্ড ২০-সারি পুনরুজ্জীবিত (wq ক্রস-মিল ×২), solver-ভূমিকা, **#1304 শীর্ষ-অগ্রাধিকার ঘোষণা**; **pass-2: টাওয়ার 429 (Cloudflare challenge) — বর্তমান ধারায় প্রথম loop-plane 429; বোর্ড-প্লেন অন্ধকার, "UNSEEN not zero" U2-সততা অটুট**; suite-plane পরিষ্কার।
-- **EP#27**: ব্যান্ড ০২:৩৮:০২–০২:৪১:০০Z runtime-derived, foreground-from-launch — **১৪/১৪, ০ মুখ (১৪তম রান, টানা ৯ম পূর্ণ-পরিষ্কার)**; ব্যান্ডে +১s সৎ-প্রবেশ, lat ৯০৭–১১৯৩ms।
-- **স্কোরবোর্ড**: **১৬ সঠিক / ১ মিস (secondary-শূন্য — ১৮তম জানালায় ভাঙল) / ১ শাখা-হিট-সহ-সম্প্রসারণ (est further-rise → ত্রি-নিয়ম মডেল)**।
-- **C120 পূর্বাভাস (falsifiable)**: C120_QUEUE = ২০ সারি [4535, 1304, 5154, 5156, 5158, 5161, 5164, 5166, 5168, 5170, 5172, 5177, 5179, 5184, 5186, 5188, 5189, 5190, 5191, 5192] — **তৃতীয়-ধাপ নজর (আরেক ১০+ জন্ম = সিরিজ-প্রথম ৩-ধাপ রিফিল-চাপ; ভারী WO-স্লাগ ল্যান্ডিং = মেগা-ড্রেন ২০-সারি-স্কেলে ARMED)**; **#1304 claim-নজর (solver PR/claim-লেবেল/পুনঃশোষণ = falsifier)**; #4535 ৩২তম ~৩২.৪ঘ (৮ম দিন); est ৭ম-চাল (২২১→ক্ষয়ে-ফেরা = burst-ঘণ্টা-বিশেষ নিশ্চিত / স্থায়ী ≥২০০ = sustained-burst যুগ); secondary ৮ম (৭→০ প্রত্যাবর্তন = ক্ষণস্থায়ী / অ-শূন্য রেনা = চেইন-পুনর্বণ্টন যুগ); brain D×৫ = যুগ চলছে / H = যুগান্তকারী পুনরুজ্জীবন; render ৫৮তম, build ৯ম (০-৪); worker ৫ম নাম-নজর; census ৮ম; খাম ২৭তম; WK ১৪তম; boot ~১৩.৬ঘ monotone ১২তম (**রিবুট ≤~১৪:০৬Z = পতাকা-ফায়ার / ১৪:০৬Z-পরে পরিষ্কার নমুনা = পতাকা মেয়াদোত্তীর্ণ-অফায়ার — স্থিতিশীলতা-যুগ-ঘোষণা**); PR-plane ৫১১৭ ৫র্থ + নবজাতক-ওপেন (৫টি ci-failed WO solver-PR জন্ম দিতে পারে); **EP#28 ব্যান্ড ০৩:৩৮–০৩:৪১Z Nov 2 (১৫তম রান)**; টানা ৭ম শূন্য-থ্রটল + loop-plane 429 পুনরাবৃত্তি-নজর।
+## Cycle 62 (12:31+08) — sentry c120 (জমা চলমান): **সিরিজ-রেকর্ড বোর্ড ৩২ সারি (পুরনো রেকর্ড ২৩) — তরঙ্গ-#৪ তৃতীয়-ধাপ +১৬ জন্ম (মিন্ট-ত্বরণ ৮→১১→১৬; সিরিজ-প্রথম ৩-ধাপ চাপ নিশ্চিত) + একই জানালায় খাত্তা-পাশ: ৪ সিড ফসল (5188→glm22 claim-PR #5214; 5190/5192 dispatch; প্রাচীন #1304 পুনঃশোষিত — classification echo #5204) + est দ্বি-প্রত্যাবর্তন হুবহু (২২১→৭৬ ক্ষয়-শাখা + secondary ৭→০ পূর্ণ-চেইন) + এলস্টার #4535 ৩৩.৪১/৩৩.৪২ঘ PRESENT ×২ (৩৩তম, ৮ম দিন) + brain টানা ৫ম D + boot ১৪.৫৯ঘ ক্যাডেন্স-হুবহু (+২.০১ঘ/দুই-জানালা; রিবুট নেই) + EP#28 ১৪/১৪ (টানা ১০ম) + লুপ উভয়-পাস পূর্ণ U5 anti-stampede, 429 পুনরাবৃত্তি নেই** — বিস্তারিত SENTRY_C120। Refs: #3376 #5196।
+
+- **স্থায়ী-নিয়ম আগে**: #5196 merged:true ×২ প্রি-স্যুট + ×১ ইন-স্যুট @ ০৪:৩৪Z ✓ (settled-chain ×২৭); **টানা ৭ম শূন্য-থ্রটল জানালা (২৬ টাওয়ার-কল: ২ প্রি-স্যুট + ১৪ EP + ৮ A + ২ C)**; হ্যান্ডশেক ২২s (glm19-এর 04:19–24Z 429/503-ঝড়-পরবর্তী) কিন্তু কোনো face নেই; ব্রাঞ্চ-কাট 1c588b7 (২২ ক্রস-মার্জ পেরিয়ে)।
+- **বোর্ড — তরঙ্গ-#৪ ধাপ-৩ (রেকর্ড)**: wq_1 @০৪:৪১:১২Z: ৩২ সারি (totalOpen=32), জন্ম ১৬ [5194, 5198, 5200, 5202, 5204, 5207, 5209, 5213, 5215, 5218, 5220, 5223, 5225, 5229, 5232, 5236] — নমুনায় সবই ২২-ল্যান্ডিং-ঘণ্টার bridge-echo WO (মিরর-মিন্ট মেশিন); **seed-missing [1304, 5188, 5190, 5192]** — খাত্তা-পাশ: ৫১৮৮ glm22-এর solver claim-PR **#5214**, ৫১৯০ glm04 ২য় dispatch (#5227), ৫১৯২ glm05 evidence (#5226), **#1304 পুনঃশোষিত (classification echo #5204 — "৩৩টি stale run সব শ্রেণিবদ্ধ"; পুনরুত্থান-চক্র সম্পূর্ণ)**; ব্র্যাকেট ৩২→৩২ স্থিতিশীল; **মেগা-ড্রেন নজর ৩২-সারি রেকর্ড-স্কেলে ARMED (~৩১ clearable — ড্রেন-মডেলের কঠিনতম মামলা)**।
+- **এলস্টার**: #4535 **৩৩.৪১/৩৩.৪২ঘ PRESENT দুই-পাঠে — ৩৩তম জানালা, ৮ম দিন**; মেগা-ড্রেন #৩ + তিন রিফিল-ধাপ + ফসল-ঘণ্টা সব পেরিয়ে **state-exempt ৮ম জানালা অপ্রতিহত**; ক্যাডেন্স ~+১ঘ/জানালা হুবহু (০৩:৩১Z জানালা প্রবেশ করেনি — runtime-স্থানান্তর); c121: ৩৪তম ~৩৪.৪ঘ (৯ম দিন)।
+- **est দ্বি-প্রত্যাবর্তন**: **primary ২২১→৭৬ (−৬৬%) — পূর্ব-নিবন্ধিত ক্ষয়ে-ফেরা শাখা ফায়ার: burst-ঘণ্টা-বিশেষ CONFIRMED (ত্রি-নিয়ম: quiet-decay / event-uplift / burst-hour-specific)**; **secondary ৭→০ + চেইন পূর্ণ-প্রত্যাবর্তন (tertiary/quaternary/quinary/tcp সব ০) — c119-এর মাইক্রো-ব্যবহার এক-জানালার ঘটনা ছিল, ১৭-জানালা শূন্য-যুগ ১৯তম হিসেবে পুনঃশুরু**; softHit false সর্বত্র।
+- **স্বাস্থ্য**: sweep ৩৪/৩০-সবুজ — **brain টানা ৫ম D (H-D-H-D-D-D-D-D; যুগ চলছে, H-প্রত্যাবর্তন যুগান্তকারী)**; অ-সবুজ সেট টানা ৩য় জানালা অপরিবর্তিত: render-primary, **render-worker (৫ম নাম-জানালা)**, **render-api (১০ম)**, render-brain; telegram সুস্থ; **TOWER-HOLLOW ক্রস-নজর নেতিবাচক** (রেজিস্ট্রি পূর্ণ ১৫৯ — glm29-এর HOLLOW #11 আমার নমুনায় পুনরাবৃত্ত নয়); **render ৫৮তম update_failed ✓**; build **১২.৬→১২.৬ (৯ম শূন্য-বার্ন ✓)**; **census ১৫৯-সেট ৮ম ✓**; খাম **২৭তম ✓**; WK **৪০৪ ১৪তম ✓**; **boot ১৪.৫৯ঘ — দুই-জানালা জুড়ে +২.০১ঘ ক্যাডেন্স হুবহু (monotone ১২তম)** — রিবুট নেই, **পতাকা expiry ~১৪:০৬Z Nov 2 প্রাণবন্ত (০৫:৩১Z–১৩:৩১Z স্প্যান পতাকার জীবন-স্প্যানে)**।
+- **PR-plane**: **[৫১১৭] ৫ম জানালা persist + নবজাতক-ওপেন #5214** (glm22-এর #5188 claim-PR — c119-এর "solver-সক্রিয়করণ-বিলম্ব" ডেটাম এক জানালাতেই মীমাংসা: ci-failed runway WO সত্যিই solver-PR জন্ম দেয়); উভয়-পাঠে n=২।
+- **লুপ**: exit 0 ×২ — **উভয় পাস প্রথমবার পূর্ণ U5 anti-stampede সিঁড়ি** ("#5189 প্রত্যাখ্যাত — খোলা bridge-WO রসিদ #5207 ইতিমধ্যে আচ্ছাদিত" → "প্রতিটি প্রার্থী আচ্ছাদিত — এই রানে কোনো পরিষ্কার পিক নেই", claimable ১/৫); pass-1 auto-rebase ৫-পিছনে + tower-fallback ৩২ রো (wq ক্রস-মিল ×২); **loop-plane 429 পুনরাবৃত্তি নেই (c119 pass-2-এর পর পরিষ্কার)**; লুপে বাংলা STATUS লাইন রেন্ডার।
+- **EP#28**: ব্যান্ড ০৪:৩৮:০২–০৪:৪১:০০Z runtime-derived (hour=৪; ০৩:৩১Z জানালা প্রবেশ করেনি — runtime-নিয়মে ১৫তম রান এই ঘণ্টায় স্থানান্তর), foreground-from-launch — **১৪/১৪, ০ মুখ (টানা ১০ম পূর্ণ-পরিষ্কার)**; +১s সৎ-প্রবেশ; ০৪:৩৯:২২Z-এ একটি ২.৩৬s লেটেন্সি-স্পাইক সৎভাবে নথিভুক্ত।
+- **স্কোরবোর্ড**: **১৬ সঠিক / ১ মিস (বোর্ড-গণনা ২০ পূর্বাভাস → ৩২ বাস্তব, ধাপ-৩-এ) / ১ উত্তরিত-নজর (পূর্ব-নিবন্ধিত তৃতীয়-ধাপ শাখা হুবহু: ১৬ জন্ম)** — c118-এর সৎ-রূপান্তর পদ্ধতিই।
+- **C121 পূর্বাভাস (falsifiable)**: C121_QUEUE = ৩২ সারি [4535, 5154, 5156, 5158, 5161, 5164, 5166, 5168, 5170, 5172, 5177, 5179, 5184, 5186, 5189, 5191, 5194, 5198, 5200, 5202, 5204, 5207, 5209, 5213, 5215, 5218, 5220, 5223, 5225, 5229, 5232, 5236] — **চতুর্থ-ধাপ নজর (ত্বরণ ৮→১১→১৬; ৪র্থ ধাপ ≥২০ = যৌগিক-চাপ / অথবা MEGA-DRAIN #৪ ফায়ার — ৩২-সারি রেকর্ড-স্কেলে ARMED, দুই-পাঠ ব্র্যাকেট বাধ্যতামূলক)**; **#5214 মার্জ-নজর + ৫১১৭ ৬র্থ-জানালা + নবজাতক-ওপেন >=5214**; #4535 ৩৪তম ~৩৪.৪ঘ (৯ম দিন); est ৮ম-চাল (৭৬→১৬–২৮ শান্ত-ভিত্তি ক্ষয় = ত্রি-নিয়ম সামঞ্জস্য / নতুন উত্থানে নাম-উৎস); secondary ৯ম (০ ধরে রাখা vs পুনঃপ্রাদুর্ভাব); brain D×৬ vs H-যুগান্তকারী; render ৫৯তম, build ১০ম (০-৪); worker ৬ষ্ঠ; api ১১তম; census ৯ম (+hollow-পুনরাবৃত্তি ক্রস-নজর); খাম ২৮তম; WK ১৫তম; boot ~১৫.৬ঘ monotone ১৩তম (**রিবুট ≤~১৪:০৬Z = পতাকা-ফায়ার / পরিষ্কার নমুনা = মেয়াদোত্তীর্ণ-অফায়ার — স্থিতিশীলতা-যুগ-ঘোষণা**); লুপ U5-ধারাবাহিকতা + 429-অ-পুনরাবৃত্তি ×২; **EP#29 ব্যান্ড ০৫:৩৮–০৫:৪১Z Nov 2 (১৬তম রান)**; টানা ৮ম শূন্য-থ্রটল।
 
 ## Reflection Evidence
 
 - **why:** the slot stays minimum-size: landed cycles fold to one line,
   only the live cycle carries bullets, durable facts update in place. The
-  c119 window fired the c118 receipt's pre-registered re-record branch
-  exactly (wave #4 leg-2: 11 births, board 9 -> 20, bracket stable, all 9
-  seeds alive) and added a series-first datum: the ANCIENT RESURRECTION
-  #1304 — an Oct-26 P1 WO re-entered the live board and the loop's own
-  dispatch named it top-priority, so a claim-watch (not alarm) is the
-  correct response. est 62 -> 221 fired the further-rise branch AGAIN and
-  broke the model honestly: two regimes are insufficient, a third
-  (sustained-burst) is required, named to the merge-burst hour; the
-  secondary zero-streak breaking (0 -> 7) is recorded as the window's one
-  MISS, not stretched to fit. brain's 4th consecutive D fired the
-  pre-registered "D x4 buries alternation for the era" branch — the era
-  is now degraded-default, and an H return would be epochal.
-- **alternatives_rejected:** (1) attributing est 221 to my own suite
-  volume — rejected: 26 bounded calls cannot bridge 62 -> 221; the
-  merge-burst hour (7 merges + 11 births + multi-agent probes) names the
-  delta. (2) reading the secondary 7 as a rotation failure — rejected:
-  softThresholdHit=false everywhere and usage is micro (7-10 per lane);
-  transient micro-use vs chain-redistribution is exactly what the c120
-  watch pre-registers. (3) scoring #1304's return as board-state
-  regression or noise — rejected: the loop's dispatch names it
-  top-priority; resurrection is a live claim-watch datum. (4) upgrading
-  the elder to proven-immortal off 7 windows — rejected: the exemption
-  stays a hypothesis with a timestamped-reap falsifier (#4272 precedent).
+  c120 window delivered the heaviest board datum of the series: 32 rows
+  (previous record 23) via wave #4 leg-3's 16 births — the pre-registered
+  third-leg branch fired exactly, so the row-count miss (20 forecast)
+  converts into the answered branch, the same honest conversion c118
+  used. The consumption side fired in the SAME window (4 seeds harvested:
+  a real solver claim-PR #5214, two dispatches, and the ancient #1304
+  re-absorbed through its classification echo) — mint and harvest are two
+  hands of one machine, which is exactly what the drain/refill model
+  predicts. est's double-revert (221 -> 76, secondary 7 -> 0) fired BOTH
+  pre-registered branches, confirming the three-regime model instead of
+  stretching it.
+- **alternatives_rejected:** (1) reading the 32-row board as runaway
+  mint inflation — rejected: the same window harvested 4 seeds through
+  real work products (claim-PR, dispatches, a classification discharge);
+  the record board is the mirror machine processing a 22-landing hour,
+  and the drain watch — not alarm — is the armed response. (2) scoring
+  the elder's 33rd reading against the original "~32.4 h" number as a
+  miss — rejected: the 03:31Z window never executed; the runtime law
+  transfers the reading to the 33rd window and the ~+1 h cadence held
+  exactly. (3) treating the secondary revert as evidence the c119 break
+  never happened — rejected: both windows are kept in the record (break
+  at 18th, revert at 19th); the flicker was real but transient, which is
+  what the pre-registered branch predicted. (4) calling the tower
+  healthy off my clean samples alone — rejected: glm29's HOLLOW #11 and
+  glm19's 429/503 sequence are kept as same-hour cross-witnesses; my
+  negative hollow-watch is bounded to my sample times.
