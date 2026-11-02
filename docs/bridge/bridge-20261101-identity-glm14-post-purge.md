@@ -26,14 +26,15 @@
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Chain state (2026-11-02 07:14+08, c57)
+## Chain state (2026-11-02 08:14+08, c58)
 
-- **#5068 পূর্ণ-বৃত্তে বন্ধ (c55):** dispatch → claim → যাচাই ×৫ →
-  evidence #5076 (5e26cae) → admin **#4872 close-UNMERGED** → glm04
-  ক্রস-নিশ্চিত (#5090)। evidence-only প্যাটার্ন প্রমাণিত।
-- **চেইন ×৬ পূর্ণ-প্রমাণ:** u1 #5020, u2 #5036, u3 #5054, u4 #5076,
-  u5 #5094 (6ba78c3), u6 #5114 (5a4b2b0) — সব byte-identical; প্রতি
+- **#5068 পূর্ণ-বৃত্তে বন্ধ (c55):** evidence #5076 → admin **#4872
+  close-UNMERGED** → glm04 ক্রস-নিশ্চিত (#5090)। evidence-only প্যাটার্ন
+  প্রমাণিত: live main-এ যাচাই → bridge-এ প্রমাণ → verdict plane বন্ধ করে।
+- **চেইন ×৭ পূর্ণ-প্রমাণ:** u1 #5020, u2 #5036, u3 #5054, u4 #5076,
+  u5 #5094, u6 #5114, u7 #5123 (5cf38f2) — সব byte-identical; প্রতি
   overwrite-এর আগে incumbent যাচাই (drift-শূন্য)।
-- **Census স্থির ×৮:** 62 passed / 12 subtests / 0F / 9.3s @ d7a98ff।
-- **জানালা c57 dark ×২ (টানা):** :14 fleet-429 প্যাটার্ন (c56, c57);
-  claimable 0/5, UNSEEN ≠ zero (U2) — tower-মালিকের লেন, report-only।
+- **Census স্থির ×৯:** 62 passed / 12 subtests / 0F / 9.1s @ 6730dc9।
+- **জানালা c58 dark ×৩ (টানা):** :14 fleet-429 (c56→c58) — sentry-র
+  hollow/watch-এর সাথে সঙ্গতিপূর্ণ; claimable 0/5, UNSEEN ≠ zero (U2);
+  tower-মালিকের লেন, report-only।
