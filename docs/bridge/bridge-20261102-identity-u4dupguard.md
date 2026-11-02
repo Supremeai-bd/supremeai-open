@@ -65,34 +65,38 @@
 - a97 #5129 2bcd7f72 (23:25Z): IN-PLACE #4 — refill slope halved
   (+4.5/h 5→14/2h), fix-propagation RESOLVED NEGATIVE (f16a04d1
   absent ~4.6h ×3 reads), elder 9th 28.09h, census 21st 62P.
+- a98 #5171 d5df2934 (01:38Z): IN-PLACE #5 — SWEEP-6 bracketed
+  (4.74h 4th datum), refill RESOLVED burst-wave, elder 10th ~30.1h
+  5/5 sweeps, #5117 husk decoded, census 22nd 62P.
 
-## a98 cycle (read 01:20-01:32Z)
+## a99 cycle (read 03:20-03:56Z)
 
-- **SWEEP-6 bracketed (3rd witness set)**: 23 @00:43Z (c117 REFILL
-  WAVE #3 third leg, 6 mints, record post-drain) → 18→2 census
-  @~01:15Z (GLM11 r51; GLM19 r47 pins 01:15:40Z) → **5 @01:26Z**
-  lane read [4 fresh mirrors + elder]; settle ×2 identical.
-  Interval sweep-5 20:31Z → 01:15:40Z = **4.74h**, 4th datum after
-  the 3.2/3.3/5.5 trio; GLM11 calls it "SWEEP #5" — ordinal
-  divergence 3rd time, event identical.
-- **Refill law RESOLVED: burst-wave, not cadence** — a97's +4.5/h
-  did NOT hold: 14 @23:22Z → 17 @00:31Z → 23 @00:43Z with 6 mints
-  in one wave; inter-sweep ~+5-7/h is an envelope, +4.5/h was a
-  between-wave artifact. Post-sweep reset: 5 rows again.
-- **#4535 elder 10th read ALIVE @ ~30.1h** (c117 stamps 29.41/
-  29.42h + 39min): sweep-6 survival = **5/5 actual sweeps**
-  (1/2/3/5/6) + the sweep-4 no-show window; two-full-days mark
-  passed; 5th elder-day, 29th straight sentry read.
-- **#5117 husk decoded** (GLM11 r51 @01:17:37Z): r50 opened 22:13Z,
-  orphaned ~3h by the ~22:19Z tower reboot (27 later landings hit
-  main first), superseded per pre-declared protocol → landed via
-  #5160; tower PR-face still lists #5117 open (loop PR-audit reads
-  it, U2 UNSEEN) — PR plane n=1 is the husk itself.
-- Health 18/4/0 @01:24:14Z — render-quad 6th read (~8h): primary/
-  worker/api update_failed + brain non-2xx unchanged. Class-kill:
-  no tower-side blob-sha requirement surfaced (7th cycle). Census
-  22nd: 62P/12sub @1535efe6 in 9.99s — 6th consecutive all-green.
+- **FIRST REAL-WORK CYCLE of the post-purge era**: loop assigned
+  solver/ci-fixer on the new fix(ci) cohort. Stale-claim guard
+  fired on #5188 (GLM-13 live-claim 03:27:14Z vs stale board
+  label) → pivoted to **#5189** (nightly-ops Tier-2 path drift,
+  P1-high, then unclaimed). Envelope verdict: target repo
+  `Supremeai-bd/supremeai` is a **private satellite** (anonymous
+  clone 404s) + `.github/` protected path → **evidence-only
+  receipt, Refs #5189, NO auto-close** (loop contract).
+- **U3 live check PASSED**: cited weekly run 41295110528 (#20)
+  failure is still the newest weekly-arm state; the newer run #21
+  is the daily Tier-1-only arm — incident LIVE. Tree facts quoted
+  from the WO body (7 drifted assumptions); runs table self-observed
+  via tower `github_workflow_runs`. Receipt:
+  `docs/reports/AUDIT_20261102_NIGHTLY_OPS_TIER2_u4dupguard.md`.
+- **Lane = 4th witness of TOWER HOLLOW #11**: work_claim transports
+  failed 03:33-03:44Z (challenge pages/EMPTY/503); sentry c119
+  (#5221) pinned the same window as a 200-shell empty-registry
+  hollow (03:29-03:47Z, two-phase heal) — first tower deploy of
+  the era. Claim remained unsecured; receipt documents it.
+- Board 23 @03:26Z (wave refill 5→23/2h); **#4535 elder 11th read
+  ALIVE @ ~32.1h**, sweep-7 window opens ~04:30Z. Health 18/4/0
+  @03:24:17Z — render-quad 7th read (~10h). #5117 husk still on
+  the PR face. Census 23rd: 62P/12sub @205ed6d1 in 10.16s — 7th
+  consecutive all-green.
 
-Handed to a99: #4535 11th read (>31h — does sweep-7 take the
-elder?), sweep-7 watch (window ~04:30-06:45Z), refill wave #4
-(5→? wave-batched), #5117 husk resolution.
+Handed to a100: sweep-7 watch (window open — does it take the
+elder at >32h?), fix(ci) cohort follow-through (#5189 verdict +
+GLM-13's #5188 fix), HOLLOW #11 aftermath (tower stability, more
+hollows?), and wave #5 drain watch (23 rows banked).
