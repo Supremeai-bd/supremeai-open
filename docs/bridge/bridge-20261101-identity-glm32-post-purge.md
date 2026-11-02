@@ -1,4 +1,4 @@
-# GLM Agent 32 (Job 486850) — Slot Receipt r40 (POST-PURGE)
+# GLM Agent 32 (Job 486850) — Slot Receipt r41 (POST-PURGE)
 
 > The founder purge #4965 (Batch 1/5: 308 files / 16,356 lines) removed the
 > predecessor 30-slot chain (r1-r30, `bridge-20261031-identity-glm32.md`).
@@ -11,21 +11,23 @@
 ## Durable facts (folded from the purged chain)
 
 1. **Flagship root-fix**: pre-commit secret detector's `[\x27"]` compiled as `[x27"]` under POSIX ERE (single-quoted secrets missed); hook self-tests were fail-open. Repaired fail-closed: #3522 (305724f), self-tests 7/7 + 6/6, negative control exits 1; CI gap #3520 remediated by #3648 — machine-enforced.
-2. **Slot disciplines**: content-mode full-file is the safe bridge transport (diff-mode mangles, c94); assert summary ≤1000 first; re-pin baseSha at submit; "Closes" keyword defeats NO-Closes prose (c93) — closure needs mechanical proof (#4671); report-only lanes never claim or close; a known deploy lever NOT pulled is discipline (sentinels hand evidence, not deploys).
-3. **Instrumentation earned**: census-at-CURRENT-TIP governs; dual-plane face-trust (sys + sweep agreement opens/closes; U→H→H = single-probe noise, U→H→U = sustained → REOPEN; expiry rule: a closed watch reopens on ONE disagreeing STATUS face — a latency watch-note does not reopen; **a single clean window is evidence of a clean window, not of a cure (c114→c115→c116→c117→c118)**); board pump model **×13 (five full cycles measured: reap CERTAIN, cadence VARIABLE — cycles #4/#5 ran 3/2 growth windows; #6 in progress)**; billing counters are attempt-driven and calendar-month; capture-side discipline (file-capture the loop's FULL output, never supplement after the loop — zero-429 six windows running).
+2. **Slot disciplines**: content-mode full-file is the safe bridge transport (diff-mode mangles, c94); assert summary ≤1000 first; re-pin baseSha at submit; **baseSha REQUIRED only for paths that EXIST on main — OMIT for new files**; "Closes" keyword defeats NO-Closes prose (c93) — closure needs mechanical proof (#4671); report-only lanes never claim or close; a known deploy lever NOT pulled is discipline (sentinels hand evidence, not deploys).
+3. **Instrumentation earned**: census-at-CURRENT-TIP governs; dual-plane face-trust (sys + sweep agreement opens/closes; expiry rule: a closed watch reopens on ONE disagreeing STATUS face — a latency watch-note does not reopen; **a single clean window is evidence of a clean window, not of a cure**); board pump model **×14 (five full cycles measured: reap CERTAIN, cadence VARIABLE; #6 in progress)**; billing counters are attempt-driven and calendar-month; **capture-side discipline: file-capture BOTH the loop's and the sweep's FULL output, never supplement or re-call after them — zero-429 seven windows (c120 lesson: an un-tee'd sweep view truncation left one face UNSEEN → filed UNSEEN, never estimated)**.
 
 ## Current watch state
 
-- **render-brain OPEN — relapse SUSTAINED ×4** (c115+c116+c117+c118 dual-plane D: sys http-None + sweep non-2xx; face #27, arc face #4). The c114 clean window remains the anomaly inside a degradation; attribution OPEN both directions (no visible deploy either way). Expiry rule governs; dual-plane agreement re-closes.
-- **Sole continuously-open thread: primary `update_failed` ≥48 h** (degraded, http 200 serving, 701 ms); worker/api carry the same update_failed face — one deploy-family event, report-only.
-- **telegram CLOSED — holds ×7** (sys H + sweep H 798 ms — the 1301 ms creep note from c117 improved back to 798; note stands, no reopen).
-- **Billing flat ×5**: …→12.6→12.6→12.6→12.6→**12.6** (487.4/500); `lastDeployStatus` update_failed; tower's builders quiet — attempt-driven thesis holds.
-- **Board pump cycle #6 — wake confirmed**: 6→**12** (+6, growth window 1 after reap #5). Only prediction stands: a reap WILL come, not when. Model ×13.
-- **Suite (lean era)**: census **62 passed / 12 subtests / 0 failed / 8.9 s** @ 52023ec — stable ×8; collection clean.
-- PR faces: #5117 (loop audit: per-PR check status UNSEEN — tower payload carries no statusCheckRollup, filed U2 not certified). Loop clean, claimable 0/5. Closed/quiet: census P0 (settled-by-prune), CVE map (retired), browser sentinels (retired), telegram (c112), #4471 arc, redis rotation, board-dark, Option A config half owner decision pending.
+- **render-brain OPEN** — relapse sustained ×4 dual-plane through c118 (face #27); **c120 sys-plane D again (face #28, http-None non-2xx) while the sweep-plane face went UNSEEN** (operator view truncated, no re-call — capture root-fixed via tee for next windows). Watch OPEN regardless; dual-plane H still required to close; attribution OPEN.
+- **Sole continuously-open thread: primary `update_failed` ≥50 h** (degraded, http 200 serving, 799 ms); worker/api share the update_failed face — one deploy-family event, report-only.
+- **telegram CLOSED — holds ×8** (sys H + sweep H, sweep lat 798→**1690 ms** — creep note escalates again; note ≠ face, closure stands).
+- **Billing flat ×6**: …→12.6×5→**12.6** (487.4/500); `lastDeployStatus` update_failed — attempt-driven thesis holds.
+- **Board pump cycle #6 — growth ×2**: 6→12→**32** (+6, then +20 — cycle-high rows). Reap #6 WILL come, cadence not predicted. Model ×14.
+- **Suite (lean era)**: census **67 passed / 12 subtests / 0 failed / 8.9 s** @ 1c588b7 — **count-shift 62→67 (+5P: upstream test_bridge_intake_pagination suite joined), 0F steady**.
+- PR faces: **#5214 (new — glm22 r52 claiming #5188)** + #5117; per-PR check status UNSEEN (U2, no statusCheckRollup in tower payload). Closed/quiet: census P0 (settled-by-prune), CVE map (retired), browser sentinels (retired), telegram (c112), #4471 arc, redis rotation, board-dark, Option A config half owner decision pending.
+- **c119 window: UNSEEN** — no cron handling occurred (no log, no filing; sandbox recycled). Recorded as a gap; cause not asserted.
 
-## c118 receipt (this filing)
+## c120 receipt (this filing)
 
-- Tree synced +10 commits e70020a→52023ec (lean era traffic: glm22 PII pin ×9 ~8 h RED-retry, glm21 no-pick hold #17, glm28 keep-it-small, glm31 SENTRY_C118 report).
-- Health: heartbeat first-try 02:33Z; sys @ 02:35-02:36Z (brain D http-None, primary D 701 ms, worker/api update_failed) + ONE unified sweep @ 02:36Z (brain D non-2xx lat 0, telegram H 798 ms, billing 12.6 flat, 487.4/500, 34 keys, overall degraded, incidents 0).
-- Census @ tip: 62P/0F/8.9 s (above). Loop output file-captured (`/tmp/loop_c118.log`) — board 12 rows via tower fallback, PR #5117 visible — **zero 429s, six windows running**.
+- Tree synced +25 commits over the 2-window gap 102c5e5→1c588b7 (glm19 r48 U3 43rd datum with first TRANSITION SEQUENCE, glm20 r35, glm14 u11, glm04 #5190 evidence arc, new pagination test suite).
+- **Loop DISPATCHED real work: #5192** (ci-fixer, P2-medium) — first dispatch after the standing no-pick era. Premise verified LIVE per stale-guard (core run 41290416574 still failure, still latest main). **Verdict: evidence lane, NOT claimed, NO Closes** — satellite repo (`supremeai-core`) + `.github/` protected path + policy-decision criterion; evidence receipt filed alongside this slot receipt (`bridge-20261102-glm32-evidence-5192.md`, same PR). Plane discrepancy (work-order open vs feedback closed) on record UNRESOLVED.
+- Health: heartbeat first-try 04:32Z; sys @ 04:37Z (brain D http-None, primary D 799 ms) + ONE unified sweep @ 04:37Z (telegram H 1690 ms, billing 12.6 flat, 487.4/500, 34 keys, overall degraded, incidents 0).
+- Census @ tip: 67P/12S/0F/8.9 s (above). Loop file-captured (`/tmp/loop_c120.log`), board 32 rows — **zero 429s, seven windows running**.
