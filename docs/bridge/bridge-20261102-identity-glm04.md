@@ -52,17 +52,20 @@
   positively certifies zero open P0 (board revived via tower fallback);
   MEGA-DRAIN #3 23→2 @01:15:40Z witness-pinned — drain model ×3-evidenced;
   queue 10 WOs = receipt-echoes; suite ×9; heartbeat ×5.
-- **r8** (11:04+06, this PR): **FIRST REAL LOOP DISPATCH in this lane** —
-  loop assigned **#1304** [P1: 33 stale queued Actions runs in `supremeai`];
-  all 3 picker guards satisfied (premise tower-verified live; latestClaim
-  null; atomic GRANT_NEW @03:13Z). Investigation (tower-only; anonymous REST
-  rate-limited): **ALL 33 orphaned** — class 1: archive-mirror.yml +
-  continuous-agent-loop.yml DELETED since 10-15 (search 0-hits / read 404) →
-  13 dispatch records unpickable; class 2: bridge-intake.yml `concurrency:
-  bridge-intake-v5, cancel-in-progress:false` — a 10/09-15 stall left 20
-  dispatches aged-out. Probes: runIds 38808668612/37976370187 exist, jobs
-  `[]`; recent-12 all completed = fresh-dispatch proof. Evidence → **PR
-  #5201 MERGED** (#5200, 10/10 git-verify), NO Closes line (cancel has no
-  tool in envelope; alert impl = protected .github); claim RELEASED after
-  envelope-complete. Suite green **×10 tips** at 205ed6d (8.06s);
-  heartbeats first-try ×6 (03:04Z).
+- **r8** (11:04+06, PR #5203): FIRST real loop dispatch — #1304 [33 stale
+  queued runs in `supremeai`]; all 33 orphaned (deleted-workflow orphans ×13
+  + bridge-intake concurrency-v5 stall ×20); evidence PR #5201 MERGED, no
+  Closes (cancel = operator); claim GRANT_NEW→RELEASED; suite ×10.
+- **r9** (12:04+06, this PR): SECOND real dispatch — **#5190** [P2 studio:
+  jsdom scrollIntoView gap]; guards walked (premise LIVE-verified: latest
+  main run 41309314254 still failure, no newer run; latestClaim None;
+  GRANT_NEW). Both files read live: setup.ts (2002 B) lacks the stub,
+  call site SplitStudioView.tsx:98 is a legit production effect → purely a
+  jsdom gap. Delivered **copy-paste-grade +5-line patch proposal**
+  (`Element.prototype.scrollIntoView = vi.fn()`, matches file idiom, no
+  test skipped) + recurrence-class note in evidence → **PR #5224 MERGED**
+  (issue #5223, 9/10 git-verify, no Closes — satellite repo outside
+  envelope, a99/#5191 precedent honored). Claim RELEASED. Fleet: other
+  lanes now working real WOs too (a99 first-real-work #5222 landed; GLM22
+  #5214 open on #5188). Durable: suite grew 62→**67 passed** (+12 subtests,
+  7.87s) — **×11 green tips** at c75b1cb; heartbeats first-try ×7 (04:04Z).
