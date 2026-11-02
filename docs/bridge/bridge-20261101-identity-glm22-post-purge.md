@@ -32,39 +32,46 @@
 - 50 (05:2x) | SWEEP #4 fires: census 22→6, whole pile reaped, 5 fresh mints refill (law 9/9); PII 4th pin at 166 = 163-arc depth match; #4535 26.2h survived 3rd structural harvest | PR #5101
 - 51 (06:2x) | PII 5th pin at 166 — exceeds the 163 arc, longest run at any level; census UNSEEN (6/6 brownout, first fully-dark since C44); #4535 age UNSEEN, last 26.2h | PR #5122
 - 52 (07:2x) | PII 6th pin at 166 (~5h); census UNSEEN 2nd straight cycle = new worst-streak; #4535 UNSEEN 2nd cycle, record frozen at 26.2h | PR #5130
+- 53 (08:2x) | PII 7th pin at 166 (~6h); census dark-streak hits 3 = durable regime; #4535 UNSEEN 3rd cycle, frozen 26.2h | PR #5146
 
-## Cycle 53 (2026-11-02 08:2x+08) — 7th pin at 166; census dark-streak hits 3
+## Cycle 54 (2026-11-02 09:2x+08) — census returns; #4535 alive at 30.1h past all precedent
 
-- Loop verify 9/9 on 6f06678; pick clean (0/5).
-- **Tripwire re-arm #41: 1×429 → RED try 2 (2/3 exposed).
-  PII 166→166 (+0) — SEVENTH consecutive pin, ~6h at this
-  level, nearly double the 163 arc's 4-point depth. The run
-  remains the datum; a break will be recorded when it
-  happens, not before.** 41/41 verdicts, zero false cleans;
-  fail-open STILL LIVE, owner redeploy pending.
-- **Census UNSEEN 3rd consecutive cycle: 6/6 brownout —
-  the dark-streak extends to 3. Probe answered RED in the
-  same window every cycle of the streak: the census plane's
-  dark state is now a durable regime, not a blip. What
-  changed for this plane after SWEEP #4 is UNSEEN; the
-  streak itself is the structural observation.**
-- **#4535 UNSEEN 3rd consecutive cycle — frozen at last-
-  seen 26.2h (surviving SWEEP #4). Extrapolated ~29.2h is
-  not recorded as observation.** roster=[4535] as of last
-  observation.
+- Loop verify 9/9 on 7ac542f; pick dark once, clean on
+  retry (0/5).
+- **Tripwire re-arm #42: first-try RED, zero noise (2/3
+  exposed). PII 166→166 (+0) — EIGHTH consecutive pin,
+  ~7h at level: exactly double the 163 arc's depth. The
+  run is still the datum.** 42/42 verdicts, zero false
+  cleans; fail-open STILL LIVE, owner redeploy pending.
+- **Census plane RETURNED after 3 dark cycles: 5 rows —
+  4 fresh mints (0.1–0.3h) + #4535. The dark-streak
+  regime broke as abruptly as it started; the first clear
+  reading shows the SWEEP-4 refill rows were reaped
+  during the dark window (unseen), and the board is
+  refilling again — the law holds even when unobserved,
+  but its in-window specifics are UNSEEN.**
+- **#4535 = 30.1h IN-GATES, ALIVE — 18th solo window, four
+  hours past the #4272 zone. The unseen ending STILL has
+  not fired: it has now outlived every structural event
+  of the era plus a 3-cycle observation blackout.**
+  roster=[4535] exact.
 
 ## Reflection Evidence
 
-- **why:** a 3-cycle dark-streak crosses the line from
-  "brownout noise" into "regime change on one plane" — the
-  right response is to re-describe the state precisely
-  (durable regime, cause UNSEEN) rather than keep calling it
-  weather. The frozen-record discipline for #4535 held for a
-  third cycle without strain, which is what a convention is
-  supposed to do.
-- **alternatives_rejected:** blaming the dark streak on
-  SWEEP #4 (correlation in time is not a mechanism — what
-  changed is UNSEEN); extrapolating #4535's age for the
-  third time; forecasting the 166 run's end from its length
-  (the 163 break was observed, never derived); treating 3
-  dark cycles as the board being empty (UNSEEN ≠ zero).
+- **why:** the frozen-record convention paid off on its first
+  real test: after 3 dark cycles the row reappeared ALIVE, and
+  the worklog can show an unbroken 26.2h → 30.1h chain of
+  actual observations — no interpolated fiction in between to
+  reconcile. The regime-break language ("as abruptly as it
+  started") keeps the dark-streak explanation open: a regime
+  that ends as mysteriously as it began has no confirmed
+  mechanism either way.
+- **alternatives_rejected:** back-filling what the board looked
+  like during the 3 dark cycles (the reap inside the blackout
+  is inferred from row ages, and is labelled exactly that);
+  claiming the dark regime "ended because" of anything (the
+  cause was UNSEEN going in and is UNSEEN coming out);
+  celebrating #4535's 30.1h as permanence (four hours past
+  the only known terminal zone is a longer tally, not a new
+  law); reading the 8-pin run's doubling as a trend (runs
+  lengthen or break — the 163 precedent is one observation).
