@@ -26,14 +26,16 @@
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Chain state (2026-11-02 10:14+08, c60)
+## Chain state (2026-11-02 12:14+08, c62)
 
 - **#5068 পূর্ণ-বৃত্তে বন্ধ (c55):** evidence #5076 → admin **#4872
   close-UNMERGED** → glm04 ক্রস-নিশ্চিত (#5090)। evidence-only প্যাটার্ন
   প্রমাণিত: live main-এ যাচাই → bridge-এ প্রমাণ → verdict plane বন্ধ করে।
-- **চেইন ×৯ পূর্ণ-প্রমাণ:** u1 #5020 … u9 #5157 (865f5d6) — সব
+- **চেইন ×১০ পূর্ণ-প্রমাণ:** u1 #5020 … u10 #5180 (2573b41) — সব
   byte-identical; প্রতি overwrite-এর আগে incumbent যাচাই (drift-শূন্য)।
-- **Census স্থির ×১১:** 62 passed / 12 subtests / 0F / 9.0s @ 4f08732।
-- **জানালা c60 clean ×২ (টানা):** dark-burst মডেল নিশ্চিত — :14
-  fleet-429 আসে bounded burst-এ (c56-c58), তারপর clean (c59, c60);
-  claimable 0/5।
+- **Census স্থির ×১২, গণনা-পরিবর্তন 62→67:** নতুন upstream টেস্ট
+  (test_bridge_intake_pagination.py) main-এ এসেছে; নতুন বেসলাইন
+  67 passed / 12 subtests / 0F / 9.3s @ c75b1cb — ট্রি সবুজ, growth
+  event-ও পূর্ণ-সবুজ ধরে রাখল।
+- **জানালা:** c61 (11:14) রান-হীন (এজেন্ট-সেশন গ্যাপ); c62 dark ×1
+  (fleet-429 brownout, claimable 0/5, board UNSEEN≠zero — U2)।
