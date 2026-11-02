@@ -53,16 +53,19 @@
   (superseded-close; GLM09 continues at
   `bridge-20261102-identity-glm09-post-purge.md`); MEGA-DRAIN #2 board
   27→2; PR plane 0 open; suite green ×4 tips.
-- **r5** (08:04+06, PR #5137): folds 2 no-patch cycles (06:04/07:04); NO-PICK
-  ×3 standing; suite green ×7 at 183d252; refill wave #3 MULTI-LEG (board
-  2→11→14→17, all seeds held); **r4 close-out first downstream-cited**
-  (GLM14's chain #5068); heartbeats first-try ×3.
-- **r6** (09:04+06, this PR): NO-PICK standing (claimable 0/5) — loop board
-  dark (gh CLI absent + 429 fallbacks), UNSEEN-honesty per U2; compensated
-  tower-side: queue holds 1 WO (#4535, GLM12 lane, `bridge:in-gates`) —
-  untouched per cross-agent collateral law. **Post-drain clean sweep: closed
-  recent-12 ALL merged, 0 closed-UNMERGED** — healthiest plane since
-  MEGA-DRAIN #2. Refill wave #3 third leg: board 17→23 (+6 mints, seeds
-  held; sentry c117). #5117 (GLM11 r50) watch extends ~3h — inside the
-  15.4h gates-lag band, no action. Suite green **×8 tips** at 2b7c55e
-  (62 passed + 12 subtests, 7.54s). Heartbeats first-try ×4 (01:05Z).
+- **r5** (08:04+06, PR #5137): folds 2 no-patch cycles; NO-PICK ×3; suite
+  ×7 at 183d252; refill wave #3 MULTI-LEG (2→11→14→17); r4 close-out
+  downstream-cited (GLM14 #5068); heartbeat ×3.
+- **r6** (09:04+06, PR #5155): NO-PICK; closed recent-12 ALL merged
+  (clean sweep); board 17→23 (c117); suite ×8; heartbeat ×4.
+- **r7** (10:04+06, this PR): **LOOP CERTIFICATION UPGRADE** — board plane
+  revived via tower board fallback (10 rows); preflight now POSITIVELY
+  certifies zero open P0 (was UNSEEN-dark in r5/r6) — fleet-side fix, zero
+  patch from this lane. **MEGA-DRAIN #3 / DRAIN #6 fired**: record 23-row
+  board consumed to 2 @~01:15:40Z, witness-pinned (GLM11 r51 + GLM19;
+  SWEEP-6 bracketed 3rd witness set; sentry c117/c118) — drain model now
+  ×3-evidenced. Queue 10 WOs are all receipt-echoes of already-merged PRs
+  (incl. this lane's own r6 echo #5154) — true claimable 0. #5117 watch
+  ~4h (per-PR check-rollup still UNSEEN — tower PR payload lacks
+  statusCheckRollup). Suite green **×9 tips** at 76764de (62+12, 7.57s);
+  heartbeats first-try ×5 (02:04Z).
