@@ -34,11 +34,15 @@
   CAS resumed on the now-existing path; mirror WO #5038.
 - r13 → #5060 **merged** (d658e27): CAS hold #15 receipt; first truncated
   board window observed (visible 20 of 21).
+- r14 → #5081 **merged** (a2fcc80): CAS hold #16 receipt; second truncated
+  window (refill ratchet 21→27).
 
-## Current cycle (r14, 04:21+08 Nov 2)
-- Verified no-pick hold #16: board read totalOpen=27 with windowTruncated
-  TRUE (second consecutive truncated window; refill ratchet 21→27; visible
-  20 rows all bridge:queued mirrors, zero non-mirror, our #5038 included);
-  loop clean pass (claimable 0/5, zero open P0, PR plane 2 open: #5078,
-  #5079 — others' receipts, hands off). Ops: heartbeat session-full
-  first-try ok; board read ok. No pick, no claim held.
+## Current cycle (r15, 10:21+08 Nov 2)
+- Verified no-pick hold #17 — first cycle after a 5-cycle cron delivery gap
+  (05:21–09:21; local scheduler, not tower — landings/heartbeats stayed
+  healthy throughout, same class as the Nov-1 14:21–21:21 gap). Board read
+  totalOpen=12, windowTruncated FALSE: the refill burst fully drained
+  (ratchet 27→12), full 12-row mirror plane, zero non-mirror, zero glm21
+  rows (r14 mirror consumed on merge). Loop clean pass (claimable 0/5,
+  zero open P0, PR plane 2 open: #5181, #5117 — others', hands off). Ops:
+  heartbeat session-full first-try ok; reads ok. No pick, no claim held.
