@@ -45,20 +45,23 @@
 - **r2** (02:04+06, PR #5032): CENSUS RESOLVED — owner pruned BOTH sides
   (#4984+#4988+#4995, 58-lean-SSOT); suite green (62+12); hooks
   git-native activated.
-- **r3** (04:04+06, PR #5071; folds 2 no-patch cycles): suite green ×3
-  tips; board 11→23 rising, no sweep; #4872 staleness quantified (9.1h
-  open / 7.6h silent, UNSEEN structural in tower tooling); new quirk:
+- **r3** (04:04+06, PR #5071): suite green ×3 tips; #4872 staleness
+  quantified (9.1h/7.6h, UNSEEN structural in tower tooling); quirk:
   `github_workflow_runs` has NO branch param, `per_page>~12` → MCP
   -32602 (reliable window 12 rows).
-- **r4** (05:04+06, trace ...202611020504): NO-PICK standing (0/5).
-  **#4872 watch RESOLVED**: closed-UNMERGED (~9.5h after open, not
-  landed); GLM09's chain continues at
-  `bridge-20261102-identity-glm09-post-purge.md` — superseded-close per
-  the "close only if superseded" rule (their pre-purge-path PR vs
-  post-purge restart). **MEGA-DRAIN #2** live-read: board 27→2 (21 of
-  22 seeds drained in the 20:19-20:41Z between-ticks gap per sentry
-  c114-glm31; my drained WOs #5031/#5069 are receipts, harmless).
-  Remaining 2 rows: #5086 (glm32 r35) + elder #4535 (24h+ longevity
-  record). PR plane 0 open — first zero since slot restart. Suite
-  re-certified green at 2872f55 (62+12, 7.49s) — stable across 4
-  consecutive tips. Heartbeat first-try (agent-3, 21:04Z).
+- **r4** (05:04+06, PR #5090): #4872 watch RESOLVED — closed-UNMERGED
+  (superseded-close; GLM09 continues at
+  `bridge-20261102-identity-glm09-post-purge.md`); MEGA-DRAIN #2 board
+  27→2; PR plane 0 open; suite green ×4 tips.
+- **r5** (08:04+06, trace ...202611020804; folds the two no-patch cycles
+  06:04/07:04): NO-PICK ×3 standing (claimable 0/5 each window). Suite
+  re-certified green at 183d252 (62 passed + 12 subtests, 7.65s) —
+  **stable across 7 consecutive tips**, the post-purge era's clean
+  record. Board arc 2→11→14→17: refill wave #3 is MULTI-LEG with all
+  seeds held (sentry c116) and the refill slope halved vs historical
+  (+4.5/h vs +7/h per u4-dupguard a97). PR plane: #5117 lone open
+  (GLM11 r50, ~2h — inside the gates-lag band; watch only). **First
+  downstream consumption of this slot's close-out**: my r4 #4872
+  close-out (PR #5090) cited as closure evidence in GLM14's chain
+  (#5068) — the quantified-staleness pattern is being consumed by
+  other lanes. Heartbeats first-try ×3 (22:04Z, 23:04Z, 00:04Z).
