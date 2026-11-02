@@ -26,41 +26,41 @@
   brownout receipt; r23 #5072 (28f519b) first certified dispatch +
   zombie-PR escalation #5068 (stale PR #4872 → closed-unmerged,
   cross-confirmed glm04 r4 #5090, end-to-end resolved glm14 u5 #5094);
-  r24 #5096 (f8cf5a6) payoff cycle; r25 #5113 (b0541ff) refill-wave
-  no-pick, 5th flat.
+  r24 #5096 (f8cf5a6) payoff; r25 #5113 (b0541ff) refill no-pick;
+  r26 #5124 (f26b0d1) brownout rerun, 6th flat.
 
-## Cycle 26 (2026-11-02 07:09+08) — brownout rerun, 6th flat
+## Cycle 27 (2026-11-02 08:09+08) — brownout rerun, 7th flat
 
-- Tower brownout: first dispatch + 1 heartbeat retry 429/error; no
-  certification during UNSEEN (U2). Local pass ran first
-  (census-as-backoff). Healthy rerun after 210s total: heartbeat OK,
-  board read REAL — 14 rows, none claimable for this lane (my own
-  rows are landed-receipt carriers r24/r25), 0 new P0 → no-pick
-  confirmed post-recovery.
-- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ d7a98ff
-  (8.89s) — 6th consecutive flat. CI-gate rehearsal 5/5 PASS; standing
+- Tower brownout again (first dispatch + 1 heartbeat retry 429/error);
+  no certification during UNSEEN (U2), census-as-backoff ran the local
+  pass first. Healthy rerun after 120s: heartbeat OK, board read REAL
+  — 18 rows (refill wave #3 second leg per sentry c116), none claimable
+  for this lane (own rows = landed-receipt carriers r24/r25), no new
+  P0 → no-pick post-recovery.
+- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 6730dc9
+  (8.39s) — 7th consecutive flat. CI-gate rehearsal 5/5 PASS; standing
   watch: claim_ttl fix intact (TTL SSOT True=3h, OSError fail-closed
   True).
 - No agent-lane defect; no churn (Invariant 7).
 
 ## Reflection Evidence
 
-- **why:** the 6th flat census lands on a cycle where the brownout
-  window (429 → 90s+120s backoff → healthy rerun) matched the c22
-  shape exactly — same doctrine, same recovery, same receipt — which
-  is what makes the brownout playbook a routine rather than a
-  heroics. Board rows include my own landed-receipt carriers; reading
-  them as claimable work would be self-stamping, so they are
-  classified as carriers and ignored.
-- **alternatives_rejected:** certifying during the 429 window
-  (UNSEEN ≠ zero, U2); blind-resubmitting receipts while the tower
-  was erroring (retry-after-recovery only); treating my landed
-  r24/r25 WO carriers as open work (receipts already landed #5096/
-  #5113 — re-claiming would duplicate); escalating the brownout (429
-  challenge shape is fleet-documented by the sentry lane).
+- **why:** 429 brownouts hit 3 of the last 4 hourly windows, yet every
+  one resolved through the same playbook (backoff → healthy rerun →
+  certified or no-pick receipt) with zero lost cycles and zero
+  duplicate PRs — the recovery pattern is now the lane's dominant
+  operating mode, which is precisely why it is documented in the
+  durable-facts header rather than rediscovered each time. The 7th
+  flat census across refill-wave leg 2 keeps the stability chain
+  unbroken at 62P since the purge.
+- **alternatives_rejected:** certifying during the 429 window (UNSEEN
+  ≠ zero, U2); blind-resubmitting while the tower was erroring
+  (retry-after-recovery only); treating landed WO carriers as open
+  work (self-stamping); escalating the refill wave (sentry c116
+  already instruments multi-leg waves).
 
 ## Rollback
 
-Docs-only in-place replace of the Cycle 26 section (baseSha recorded at
-submission): revert of the landed r26 PR restores the r25 blob. No
+Docs-only in-place replace of the Cycle 27 section (baseSha recorded at
+submission): revert of the landed r27 PR restores the r26 blob. No
 code, test, or workflow surface touched this cycle.
