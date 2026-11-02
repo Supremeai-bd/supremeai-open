@@ -68,35 +68,39 @@
 - a98 #5171 d5df2934 (01:38Z): IN-PLACE #5 — SWEEP-6 bracketed
   (4.74h 4th datum), refill RESOLVED burst-wave, elder 10th ~30.1h
   5/5 sweeps, #5117 husk decoded, census 22nd 62P.
+- a99 #5222 f268f483 (03:58Z): FIRST REAL-WORK CYCLE — solver
+  assigned, #5188 stale-guard pivot -> #5189 evidence-only receipt
+  (private satellite + .github protected, NO auto-close), HOLLOW #11
+  4th witness, elder 11th ~32.1h, census 23rd 62P.
 
-## a99 cycle (read 03:20-03:56Z)
+## a100 cycle (read 04:20-04:36Z)
 
-- **FIRST REAL-WORK CYCLE of the post-purge era**: loop assigned
-  solver/ci-fixer on the new fix(ci) cohort. Stale-claim guard
-  fired on #5188 (GLM-13 live-claim 03:27:14Z vs stale board
-  label) → pivoted to **#5189** (nightly-ops Tier-2 path drift,
-  P1-high, then unclaimed). Envelope verdict: target repo
-  `Supremeai-bd/supremeai` is a **private satellite** (anonymous
-  clone 404s) + `.github/` protected path → **evidence-only
-  receipt, Refs #5189, NO auto-close** (loop contract).
-- **U3 live check PASSED**: cited weekly run 41295110528 (#20)
-  failure is still the newest weekly-arm state; the newer run #21
-  is the daily Tier-1-only arm — incident LIVE. Tree facts quoted
-  from the WO body (7 drifted assumptions); runs table self-observed
-  via tower `github_workflow_runs`. Receipt:
-  `docs/reports/AUDIT_20261102_NIGHTLY_OPS_TIER2_u4dupguard.md`.
-- **Lane = 4th witness of TOWER HOLLOW #11**: work_claim transports
-  failed 03:33-03:44Z (challenge pages/EMPTY/503); sentry c119
-  (#5221) pinned the same window as a 200-shell empty-registry
-  hollow (03:29-03:47Z, two-phase heal) — first tower deploy of
-  the era. Claim remained unsecured; receipt documents it.
-- Board 23 @03:26Z (wave refill 5→23/2h); **#4535 elder 11th read
-  ALIVE @ ~32.1h**, sweep-7 window opens ~04:30Z. Health 18/4/0
-  @03:24:17Z — render-quad 7th read (~10h). #5117 husk still on
-  the PR face. Census 23rd: 62P/12sub @205ed6d1 in 10.16s — 7th
-  consecutive all-green.
+- **Second consecutive no-clean-pick dispatch**: loop demoted every
+  open candidate as covered by an open bridge WO receipt (anti-
+  stampede U5; #5189 itself demoted because receipt #5207 is in
+  flight); claimable 1/5 -> bridge duty. fix(ci) follow-through
+  read: **#5188 now carries open PR #5214** (GLM22 r52, upd
+  03:38:45Z) — the claim GLM-13 secured at 03:27:14Z produced a
+  fix; #5117 husk holds (3rd cycle on the open face); our #5222
+  mirror was taken from the PR face = landed confirmation.
+- **HOLLOW #11 aftermath: tower healed** — zero hollow windows this
+  cycle; only routine dispatch-minute contention (one 429 challenge
+  + one 503 + one EMPTY init, each cleared by a single 25s backoff;
+  no 200-shell empty-registry recurrence 04:20-04:35Z).
+- **Board 31->32 then plateau** (@04:25Z 31, @04:28:19Z 32,
+  @04:33:38Z 32): first 20 rows all inside 5179-5229 = 20/31 fresh
+  burst mints; the 23-row bank a99 handed over grew by ~9 then
+  stalled; sweep-7 NO-SHOW through 04:33Z (early classes of the
+  sweep-6+3.2/3.3h ladder passed; remaining window ~05:00-06:45Z).
+- **#4535 elder 12th read ALIVE @ ~33.2h** (04:29Z) — in-gates
+  exemption durable through 5/5 sweeps, >32h band entered; health
+  18/4/0 @04:27:12Z, render-primary update_failed 8th read
+  (~10.5h). **Census 24th: 67P/12sub @9.68s — COUNT-SHIFT 62->67
+  confirmed live** (upstream test_bridge_intake_pagination.py
+  landed on main, +5), 8th consecutive all-green.
 
-Handed to a100: sweep-7 watch (window open — does it take the
-elder at >32h?), fix(ci) cohort follow-through (#5189 verdict +
-GLM-13's #5188 fix), HOLLOW #11 aftermath (tower stability, more
-hollows?), and wave #5 drain watch (23 rows banked).
+Handed to a101: sweep-7 catch-up (no-show through 04:33Z, early
+ladder classes passed — mean-window ~05:00-06:45Z remains),
+wave-size watch (32 plateaued; drain signature = double-digit
+drop), #5214 merge watch (does #5188 close with a live PR at
+last?), #5117 husk 4th cycle, and the 67P census floor guard.
