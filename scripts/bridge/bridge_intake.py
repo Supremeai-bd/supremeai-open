@@ -242,6 +242,44 @@ def gh_first_page(path: str, token: str) -> tuple[list[dict], bool]:
         raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
 
 
+def gh_paged_capped(path: str, token: str, max_pages: int) -> tuple[list[dict], bool]:
+    """Link-following paginator with a bounded recent window — `(items, has_more)` (#5188).
+
+    বাংলা: `gh_paged`-এর fail-honest cap-raise (E5, #58) sync-এর closed-PR
+    স্ক্যানে অবিচ্ছিন্ন লাল run দিচ্ছিল — রিপোতে ৫০০+ closed PR হলেই
+    `pagination cap reached (5 pages)` → sync non-zero (লাইভ-প্রমাণিত #5188:
+    monorepo run 41369130502)। এই helper `gh_first_page`-এর (#2265)
+    cap-tolerant চুক্তিকে multi-page-এ বাড়ায়: `sort=updated` recent-first
+    window হুবহু `max_pages` টি পেজ পর্যন্ত স্ক্যান করে, সীমা ছুঁলে raise নয় —
+    `(items, True)`; সিদ্ধান্ত কলারের। HTTP ত্রুটি আজও BridgeError —
+    fail-honest অক্ষত; পার্টিয়াল-কভারেজ নোট caller-ই সৎভাবে ছাপবে —
+    নীরব ট্রাংকেশন এই ফাইলে নিষিদ্ধই।
+    """
+    items: list[dict] = []
+    url: str = path if path.startswith("http") else f"https://api.github.com{path}"
+    pages = 0
+    while url:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "supremeai-bridge-intake",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                body = json.loads(resp.read().decode() or "[]")
+                items.extend(body if isinstance(body, list) else [])
+                url = _next_link(resp.headers.get("Link", ""))
+        except urllib.error.HTTPError as exc:
+            raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
+        pages += 1
+        if url and pages >= max_pages:
+            return items, True  # bounded window — caller reports coverage honestly (#5188)
+    return items, False
+
+
 # (#2547) Bridge PR-এর দুই লেন: v2 `bridge-land/<task_id>` (private স্যাটেলাইট),
 # solver `bridge/<task_id>` (সরাসরি OPEN_REPO)। ক্রম গুরুত্বপূর্ণ নয় —
 # "bridge-land/x" কখনো "bridge/" prefix-এ মেলে না ("bridge-" এর পরে "/" নেই)।
@@ -489,7 +527,7 @@ def clone(repo: str, token: str, dest: Path, depth: int = 50) -> str:
 
 
 def ensure_diffable_base(public_dir: str, branch: str) -> None:
-    """Three-dot diff-এর আগে merge-base connectivity guarantee (#3723 রুট-কজ)।
+    """Three-dot diff-এর আ��ে merge-base connectivity guarantee (#3723 রুট-কজ)।
 
     বাংলা: `--depth=50` shallow clone-এ WO ব্রাঞ্চের base main-টিপ থেকে >~50 কমিট
     পেছনে গেলে দুই shallow object-window **ডিসজয়েন্ট** হয় — main window হলো
@@ -1147,15 +1185,26 @@ def cmd_sync(token: str) -> int:
     # BRIDGE_TARGET_REPOS অস্পৃষ্ট — sync/routing SSOT অক্ষত (#2265 probe-রীতির
     # প্রতিফলন: OPEN_REPO first, একটি সস্তা কল প্রথমে)।
     scan_repos: tuple[str, ...] = (OPEN_REPO,) + BRIDGE_TARGET_REPOS
+    # (#5188) bounded recent-window স্ক্যানের সৎ পার্টিয়াল-কভারেজ নোট — sync লাল হবে
+    # না, কিন্তু সীমা ছোঁয়া চুপচাপ ঢেকে রাখা হবে না।
+    coverage_notes: list[str] = []
     for repo in scan_repos:
-        # E5: ৪০-এর window বাদ, পুরো closed-PR ইতিহাস (Link rel=next) — নীরভ
-        # cron-slot-এর পর পুরনো landed PR-ও report হতে হবে, নাহলে public issue
-        # চিরকাল in-gates/queued-এ আটকে থাকে।
+        # #5188: `sort=updated` recent-first bounded window — ৫ পেজ (৫০০)
+        # most-recently-updated closed PR স্ক্যান হবেই; আরও পুরনোগুলো আগের
+        # run-গুলোতেই reconcile হয়ে গেছে। সীমা ছোঁয়া আর লাল ব্যর্থতা নয় —
+        # সৎ partial-coverage নোট; HTTP ত্রুটি আজও fail-honest non-zero।
         try:
-            pulls = gh_paged(f"/repos/{repo}/pulls?state=closed&sort=updated&per_page=100", token, max_pages=5)
+            pulls, prs_more = gh_paged_capped(
+                f"/repos/{repo}/pulls?state=closed&sort=updated&per_page=100", token, max_pages=5
+            )
         except BridgeError as exc:
             sync_errors.append(f"PR fetch failed: {str(exc)[:160]} ({repo})")
             continue
+        if prs_more:
+            coverage_notes.append(
+                f"{repo}: closed-PR scan PARTIAL — most-recent 500 (5 pages) scanned, "
+                "older PRs not scanned this run (fail-honest; no silent truncation) (#5188)"
+            )
         for p in pulls:
             task_id = strip_lane_prefix((p.get("head") or {}).get("ref", ""))
             if not task_id:
@@ -1242,6 +1291,10 @@ def cmd_sync(token: str) -> int:
     print("== bridge sync ==")
     for line in results or ["nothing to sync"]:
         print(" -", line)
+    if coverage_notes:
+        print("== bridge sync partial coverage (fail-honest, run continues) ==")
+        for line in coverage_notes:
+            print(" ~", line)
     if sync_errors:
         print("== bridge sync repo-level errors (fail-honest) ==")
         for line in sync_errors:
