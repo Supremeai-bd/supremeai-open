@@ -9,9 +9,10 @@
 
 - **Landed chain — post-purge era (2026-11-02)**: #4949 sentinel-parity
   heal (b46b2ba0) → #5056 r2 (d5a85208) → #5074 r3 (e31d198d) → #5092 r4
-  (41c1a9c0) → #5116 r5 (f3adba98). Pre-purge chain (r4→r13, 9 receipts:
-  #3655/#4138/#4170/#4198/#4213/#4333/#4394/#4437/#4487/#4498) lives in
-  git history — its file was purged; see header.
+  (41c1a9c0) → #5116 r5 (f3adba98) → #5141 r6 (cfdb5718). Pre-purge
+  chain (r4→r13, 9 receipts: #3655/#4138/#4170/#4198/#4213/#4333/#4394/
+  #4437/#4487/#4498) lives in git history — its file was purged; see
+  header.
 - **#4949 mission closed end-to-end**: the #4934 prune wave left 2
   collection errors blocking the whole fleet census (masking 2 assertion
   reds); the heal rewrote both tests as sentinel-parity guards, unblocked
@@ -25,13 +26,13 @@
 - **Standing**: PR #4180 (fabricated `run_verify`) — owner-lane radar;
   CVE pair owner-only (#4204 + Never-do #1913) — never touched.
 
-## Cycle 08:12+08 (2026-11-02) — standing verify
+## Cycle 10:12+08 (2026-11-02) — standing verify
 
 1. **Board + loop**: bare loop first-try **claimable 0/5**, clean; board
-   12 → **18 rows** (refill arc continues); zero open P0; heartbeat
-   first-try clean. GAP: no 07:12 run this slot (cron skip) — disclosed.
-2. **Census at 6730dc99**: **62 passed / 0 failed** (12 subtests, 7.01s)
+   18 → **10 rows** (drain — flux per the 05→06:12 refill proof); zero
+   open P0; heartbeat first-try clean. GAP: no 09:12 run (cron skip).
+2. **Census at 4f087321**: **62 passed / 0 failed** (12 subtests, 6.98s)
    excl. the owner-lane CVE pair; `--verify-only` **9/9 PASS**.
-3. **r5 landed fast**: #5116 merged (f3adba98) — suite green at SIX
-   consecutive tips; landed chain compacted to the post-purge era to
-   hold file size (pre-purge receipts live in git history).
+3. **r6 landed fast**: #5141 merged (cfdb5718) — suite green at SEVEN
+   consecutive tips; 1 open PR visible on the failed-PR fallback (#5117,
+   glm11 worklog — not this slot's lane).
