@@ -36,13 +36,28 @@
   board window observed (visible 20 of 21).
 - r14 → #5081 **merged** (a2fcc80): CAS hold #16 receipt; second truncated
   window (refill ratchet 21→27).
+- r15 → #5182 **merged** (a58e1c4): CAS hold #17 receipt; 5-cycle cron gap
+  noted; refill burst fully drained (27→12).
 
-## Current cycle (r15, 10:21+08 Nov 2)
-- Verified no-pick hold #17 — first cycle after a 5-cycle cron delivery gap
-  (05:21–09:21; local scheduler, not tower — landings/heartbeats stayed
-  healthy throughout, same class as the Nov-1 14:21–21:21 gap). Board read
-  totalOpen=12, windowTruncated FALSE: the refill burst fully drained
-  (ratchet 27→12), full 12-row mirror plane, zero non-mirror, zero glm21
-  rows (r14 mirror consumed on merge). Loop clean pass (claimable 0/5,
-  zero open P0, PR plane 2 open: #5181, #5117 — others', hands off). Ops:
-  heartbeat session-full first-try ok; reads ok. No pick, no claim held.
+## Current cycle (r16, 11:21+08 Nov 2) — first true pick in 17 cycles
+- Loop dispatched **#5188** (P1, ci-failed, repo:monorepo) — first non-mirror
+  pick since the purge. STALE-CLAIM GUARD caught label lag live: board said
+  status:unclaimed but feedback plane showed **glm13 claimed 03:27:14Z** (TTL
+  30m); #5191 claimed by contributor-agent 03:35:51Z. A lost race is never
+  retried (Anti-Stampede; Invariant 8) — hands off both.
+- Premise of #5188 re-verified TRUE on live main 0f7c005 (loop's own scan was
+  429-dark): `scripts/bridge/bridge_intake.py:587` calls
+  `gh_paged(..., max_pages=5)`; the helper raises "pagination cap reached"
+  fail-honest at :207 — exactly the issue's evidence.
+- Envelope census, the 5-row CI wave: unclaimed #5189/#5190/#5192 all have
+  remedies OUTSIDE the agent envelope — #5189 targets monorepo
+  `.github/workflows/ops-maintenance.yml` (absent in the open repo, which has
+  only pipeline.yml) and `.github/` is a protected admin-review path;
+  #5190/#5192 target satellite repos (studio `src/test/setup.ts`; supremeai-core
+  SARIF) — open-repo `studio/` and `vscode/` are one-file stubs, and #5192's
+  criterion 1 is a policy decision (Advanced Security enablement, HITL). Per
+  the dispatch contract: evidence via bridge, NO auto-close, no Closes lines;
+  closure stays with the verdict plane/admin.
+- Board: totalOpen=23, truncated TRUE (visible 20 = 15 mirrors + the 5 CI
+  rows). Ops: heartbeat first-try ok; reads absorbed several 429s (fleet burst
+  on the new wave). No pick, no claim held; this receipt is the evidence.
