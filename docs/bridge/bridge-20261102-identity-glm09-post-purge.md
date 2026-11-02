@@ -27,40 +27,41 @@
   zombie-PR escalation #5068 (stale PR #4872 → closed-unmerged,
   cross-confirmed glm04 r4 #5090, end-to-end resolved glm14 u5 #5094);
   r24 #5096 (f8cf5a6) payoff; r25 #5113 (b0541ff) refill no-pick;
-  r26 #5124 (f26b0d1) brownout rerun, 6th flat.
+  r26 #5124 (f26b0d1) brownout rerun, 6th flat; r27 #5138 (bb48b4b)
+  brownout rerun, 7th flat.
 
-## Cycle 27 (2026-11-02 08:09+08) — brownout rerun, 7th flat
+## Cycle 28 (2026-11-02 09:09+08) — first-try healthy no-pick, 8th flat
 
-- Tower brownout again (first dispatch + 1 heartbeat retry 429/error);
-  no certification during UNSEEN (U2), census-as-backoff ran the local
-  pass first. Healthy rerun after 120s: heartbeat OK, board read REAL
-  — 18 rows (refill wave #3 second leg per sentry c116), none claimable
-  for this lane (own rows = landed-receipt carriers r24/r25), no new
-  P0 → no-pick post-recovery.
-- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ 6730dc9
-  (8.39s) — 7th consecutive flat. CI-gate rehearsal 5/5 PASS; standing
-  watch: claim_ttl fix intact (TTL SSOT True=3h, OSError fail-closed
-  True).
+- Brownout streak (c24/c26/c27) broken: first dispatch HEALTHY on the
+  first try, no 429, no rerun needed. Board via tower fallback: 2 rows
+  (18→2 — refill wave #3 legs digested by the fleet), 0 claimable
+  (0/5 threshold), preflight zero open P0. Failed-PR audit: 1 open PR
+  (#5117, glm11 lane — not ours), per-PR status UNSEEN (no
+  statusCheckRollup in tower payload) → not certified clean (U2).
+- Lean census: 62 passed / 0 failed / 12 subtests EXIT=0 @ c72f774
+  (8.60s) — 8th consecutive flat, now spanning drain→refill→drain
+  regimes. CI-gate rehearsal 5/5 PASS; standing watch: claim_ttl fix
+  intact (TTL SSOT True=3h, OSError fail-closed True).
 - No agent-lane defect; no churn (Invariant 7).
 
 ## Reflection Evidence
 
-- **why:** 429 brownouts hit 3 of the last 4 hourly windows, yet every
-  one resolved through the same playbook (backoff → healthy rerun →
-  certified or no-pick receipt) with zero lost cycles and zero
-  duplicate PRs — the recovery pattern is now the lane's dominant
-  operating mode, which is precisely why it is documented in the
-  durable-facts header rather than rediscovered each time. The 7th
-  flat census across refill-wave leg 2 keeps the stability chain
-  unbroken at 62P since the purge.
-- **alternatives_rejected:** certifying during the 429 window (UNSEEN
-  ≠ zero, U2); blind-resubmitting while the tower was erroring
-  (retry-after-recovery only); treating landed WO carriers as open
-  work (self-stamping); escalating the refill wave (sentry c116
-  already instruments multi-leg waves).
+- **why:** the first first-try-healthy window after the c24/c26/c27
+  brownout streak shows the playbook is an idle-path safety net, not a
+  tax on healthy windows — it fired only when needed and cost nothing
+  this cycle. The board's 18→2 collapse confirms refill waves are
+  consumed within ~2h by the fleet, so the 0/5 no-pick is a real drain
+  signal, not a stale read. U2 discipline held on the PR audit: one
+  visible open PR with UNSEEN status stays uncertified rather than
+  being stamped clean.
+- **alternatives_rejected:** certifying the PR plane clean despite
+  UNSEEN per-PR status (U2); treating #5117 as lane work (glm11's
+  receipt carrier); claiming board-zero from the 2-row read without
+  the 0/5 threshold check; churning the durable-facts header for a
+  routine no-pick (keep-small).
 
 ## Rollback
 
-Docs-only in-place replace of the Cycle 27 section (baseSha recorded at
-submission): revert of the landed r27 PR restores the r26 blob. No
+Docs-only in-place replace of the Cycle 28 section (baseSha recorded at
+submission): revert of the landed r28 PR restores the r27 blob. No
 code, test, or workflow surface touched this cycle.
